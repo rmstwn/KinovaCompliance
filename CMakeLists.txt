@@ -33,6 +33,25 @@ include_directories(
     ${PINOCCHIO_INCLUDE_DIRS}
     )
 
+# Pinocchio Casadi Lib
+set(LIBRARY_TARGET_NAME casadi_kin_dyn) # set library name
+set(${LIBRARY_TARGET_NAME}_SRC 
+        src/KinovaPinocchioCasadi/casadi_kin_dyn.cpp
+    )
+
+add_library(${LIBRARY_TARGET_NAME} SHARED ${${LIBRARY_TARGET_NAME}_SRC})
+target_link_libraries(${LIBRARY_TARGET_NAME} PRIVATE pinocchio::pinocchio casadi ${PINOCCHIO_LIBRARIES} ${urdfdom_LIBRARIES} ${Boost_LIBRARIES})
+target_compile_options(${LIBRARY_TARGET_NAME} PRIVATE -std=c++11)
+set_target_properties(${LIBRARY_TARGET_NAME} PROPERTIES 
+        VERSION ${${PROJECT_NAME}_VERSION})
+target_include_directories(${LIBRARY_TARGET_NAME} INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                            "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>"
+                                                            ${EIGEN3_INCLUDE_DIR})
+
+set(PINOCCHIO_MODEL_DIR "${PROJECT_SOURCE_DIR}/robots/models")
+add_definitions('-DPINOCCHIO_MODEL_DIR=\"${PINOCCHIO_MODEL_DIR}\"')
+
+
 # Set the path to the Kinova Kortex API include directory
 set(KORTEX_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/kortex/include")
 
@@ -64,6 +83,7 @@ link_directories(${KORTEX_LIBRARY_DIR})
 set(SOURCES 
     main.cpp 
     src/KinovaClient/utilities.cpp
+    src/KinovaPinocchioCasadi/casadi_kin_dyn.cpp
     # src/KinovaMobile/kinova_mobile.cpp
     # src/KinovaClient/kinova_client.cpp
     # src/KinovaClient/specifications.cpp
@@ -83,6 +103,8 @@ target_link_libraries(KinovaCompliance ${KORTEX_LIBRARY_DIR}/release/libKortexAp
 # Link against the Casadi library
 target_link_libraries(KinovaCompliance ${CASADI_LIBRARIES})
 
+# Link against the Pinocchio library
+target_link_libraries(KinovaCompliance pinocchio::pinocchio casadi_kin_dyn)
 
 # Include directories for your project
 target_include_directories(KinovaCompliance PRIVATE include/)

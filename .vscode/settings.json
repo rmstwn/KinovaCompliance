@@ -74,6 +74,10 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "*.ipp": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "queue": "cpp",
+        "csignal": "cpp",
+        "any": "cpp",
+        "shared_mutex": "cpp"
     }
 }
