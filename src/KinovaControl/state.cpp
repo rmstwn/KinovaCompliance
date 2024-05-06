@@ -1,101 +1,117 @@
+#include "KinovaControl/state.hpp"
+
 #include <iostream>
 #include <vector>
-#include <casadi/casadi.hpp>
-#include <array>
+#include <Eigen/Dense>
+#include <filesystem>
+#include "KinovaControl/controller.hpp"
 
-const int JOINTS = 6;
-const int WHEELS = 4;
-const int DIM = 3;
+void JointData::initialize()
+{
+    q = Eigen::VectorXd::Zero(n);
+    dq = Eigen::VectorXd::Zero(n);
+    c = Eigen::VectorXd::Zero(n);
+    fault = Eigen::VectorXd::Zero(n);
+}
 
-class JointData {
-public:
-    int n;
-    std::vector<double> q, dq, c, fault;
-
-    JointData(int num) : n(num) {
-        q.resize(n);
-        dq.resize(n);
-        c.resize(n);
-        fault.resize(n);
-    }
-};
-
-class Controller {
-public:
-    Controller() {
-        // Constructor implementation
+State::State(bool simulate)
+    : kinova_feedback(JOINTS), dingo_feedback(WHEELS), kinova_command(JOINTS), dingo_command(WHEELS)
+{
+    // Initialize other members
+    // Assign values to array members individually
+    for (int i = 0; i < DIM; ++i)
+    {
+        target[i] = x()[i];
+        absolute_target[i] = x()[i];
     }
 
-    void reset() {
-        // Reset implementation
+    // Initialize pos_base and quat_base
+    std::fill_n(pos_base, 3, 0.0);
+    std::fill_n(quat_base, 4, 0.0);
+
+    // Create and reset controller
+    controller.reset();
+
+    // Assign values to ratios and frictions based on simulation
+    if (simulate)
+    {
+        std::fill_n(ratios, JOINTS, 1.0);
+        std::fill_n(frictions, JOINTS, 0.2);
     }
-};
-
-class State {
-private:
-    casadi::Function casadi_g, casadi_x, casadi_dx, casadi_J, casadi_JT, casadi_lam, casadi_mu, casadi_N, casadi_Nv, casadi_dq, casadi_T;
-
-public:
-    JointData kinova_feedback;
-    Controller controller;
-
-    State(bool simulate) {
-        load_symbolics();
-        kinova_feedback = JointData(JOINTS);
-        controller = Controller();
-
-        if (simulate) {
-            // Initialize parameters for simulation
-        } else {
-            // Initialize parameters for real robot
-        }
+    else
+    {
+        double ratiosArr[] = {1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
+        double frictionsArr[] = {0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
+        std::copy(std::begin(ratiosArr), std::end(ratiosArr), ratios);
+        std::copy(std::begin(frictionsArr), std::end(frictionsArr), frictions);
     }
+}
 
-    casadi::DM g() {
-        return casadi_g(kinova_feedback.q);
-    }
+Eigen::Vector3d State::getPosBase() const
+{
+    return Eigen::Vector3d(pos_base[0], pos_base[1], pos_base[2]);
+}
 
-    casadi::DM x() {
-        return casadi_x(kinova_feedback.q);
-    }
+void State::setPosBase(const Eigen::Vector3d &pos)
+{
+    pos_base[0] = pos[0];
+    pos_base[1] = pos[1];
+    pos_base[2] = pos[2];
+}
 
-    casadi::DM dx() {
-        return casadi_dx(kinova_feedback.q, kinova_feedback.dq);
-    }
+Eigen::Vector4d State::getQuatBase() const
+{
+    return Eigen::Vector4d(quat_base[0], quat_base[1], quat_base[2], quat_base[3]);
+}
 
-    casadi::DM J() {
-        return casadi_J(kinova_feedback.q);
-    }
+void State::setQuatBase(const Eigen::Vector4d &quat)
+{
+    quat_base[0] = quat[0];
+    quat_base[1] = quat[1];
+    quat_base[2] = quat[2];
+    quat_base[3] = quat[3];
+}
 
-    casadi::DM JT() {
-        return casadi_JT(kinova_feedback.q);
-    }
+Eigen::VectorXd State::g() {
+    // return casadi_g(kinova_feedback.q);
+}
 
-    casadi::DM lam() {
-        return casadi_lam(kinova_feedback.q);
-    }
+Eigen::VectorXd State::x() {
+    // return casadi_x(kinova_feedback.q);
+}
 
-    casadi::DM mu() {
-        return casadi_mu(kinova_feedback.q, kinova_feedback.dq);
-    }
+Eigen::VectorXd State::dx() {
+    // return casadi_dx(kinova_feedback.q, kinova_feedback.dq);
+}
 
-    casadi::DM N() {
-        return casadi_N(kinova_feedback.q);
-    }
+Eigen::MatrixXd State::J() {
+    // return casadi_J(kinova_feedback.q).reshape(DIM, JOINTS);
+}
 
-    casadi::DM Nv() {
-        return casadi_Nv(kinova_feedback.q);
-    }
+Eigen::MatrixXd State::JT() {
+    // return casadi_JT(kinova_feedback.q).reshape(JOINTS, DIM);
+}
 
-    std::vector<double> dq_inv(std::vector<double> dx) {
-        return casadi_dq(kinova_feedback.q, dx);
-    }
+Eigen::MatrixXd State::lam() {
+    // return casadi_lam(kinova_feedback.q).reshape(DIM, DIM);
+}
 
-    std::vector<double> T(std::vector<double> force) {
-        return casadi_T(kinova_feedback.q, force);
-    }
+Eigen::MatrixXd State::mu() {
+    // return casadi_mu(kinova_feedback.q, kinova_feedback.dq).reshape(DIM, DIM);
+}
 
-    void load_symbolics() {
-        // Load symbolics here
-    }
-};
+Eigen::MatrixXd State::N() {
+    // return casadi_N(kinova_feedback.q).reshape(JOINTS, JOINTS);
+}
+
+Eigen::MatrixXd State::Nv() {
+    // return casadi_Nv(kinova_feedback.q).reshape(JOINTS, JOINTS);
+}
+
+Eigen::VectorXd State::dq_inv(const Eigen::VectorXd& dx) {
+    // return casadi_dq(kinova_feedback.q, dx);
+}
+
+Eigen::VectorXd State::T(const Eigen::VectorXd& force) {
+    // return casadi_T(kinova_feedback.q, force);
+}

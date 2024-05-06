@@ -2,27 +2,30 @@
 #define RATE_COUNTER_HPP
 
 #include <thread>
+#include <atomic>
 #include <chrono>
 
-class RateCounter {
+class RateCounter
+{
 public:
     RateCounter(int desired_rate);
     ~RateCounter();
 
-    void count();
     void start();
     void stop();
     int getRate() const;
+    double getSleepTime() const;
+    void count();
 
 private:
     void loop();
 
     int desired_rate_;
-    int n_;
-    int rate_;
+    std::atomic<int> n_;
+    std::atomic<int> rate_;
+    std::atomic<bool> active_;
     double sleep_time_;
-    bool active_;
-    std::thread loop_thread_;
+    std::thread thread_;
 };
 
 #endif // RATE_COUNTER_HPP

@@ -26,7 +26,7 @@
 #include <TransportClientUdp.h>
 
 #include "specifications.hpp"
-#include "state.hpp"
+#include "KinovaControl/state.hpp"
 #include "KinovaControl/rate_counter.hpp"
 
 namespace k_api = Kinova::Api;

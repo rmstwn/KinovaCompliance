@@ -9,6 +9,29 @@ enable_testing()
 # set (CMAKE_CXX_STANDARD 11)
 
 # Find pkg
+find_package(Eigen3 REQUIRED)
+find_package(casadi REQUIRED)
+find_package(pinocchio REQUIRED)
+
+# set casadi include directory
+set(CASADI_INCLUDE_DIR /usr/local/include/casadi)
+
+# find casadi library
+find_library(CASADI_LIBRARY
+    NAMES casadi
+    HINTS ${CASADI_INCLUDE_DIR}/../lib $ENV{CASADI_PREFIX}/lib)
+if(CASADI_LIBRARY)
+    set(CASADI_LIBRARIES ${CASADI_LIBRARIES} ${CASADI_LIBRARY})
+endif()
+
+# include header directories
+include_directories(
+    SYSTEM ${CASADI_INCLUDE_DIR}
+    include/
+    src/
+    ${EIGEN3_INCLUDE_DIR}
+    ${PINOCCHIO_INCLUDE_DIRS}
+    )
 
 # Set the path to the Kinova Kortex API include directory
 set(KORTEX_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/kortex/include")
@@ -40,10 +63,14 @@ link_directories(${KORTEX_LIBRARY_DIR})
 # Add your source files
 set(SOURCES 
     main.cpp 
-    src/KinovaMobile/kinova_mobile.cpp
-    src/KinovaClient/kinova_client.cpp
-    src/KinovaClient/specifications.cpp
     src/KinovaClient/utilities.cpp
+    # src/KinovaMobile/kinova_mobile.cpp
+    # src/KinovaClient/kinova_client.cpp
+    # src/KinovaClient/specifications.cpp
+    # src/KinovaClient/utilities.cpp
+    # src/KinovaControl/controller.cpp
+    # src/KinovaControl/rate_counter.cpp
+    # src/KinovaControl/state.cpp
 )
 
 # Create the executable
@@ -52,6 +79,10 @@ add_executable(KinovaCompliance ${SOURCES})
 # Link against the Kinova Kortex API library
 target_link_libraries(KinovaCompliance ${KORTEX_LIBRARY_DIR})
 target_link_libraries(KinovaCompliance ${KORTEX_LIBRARY_DIR}/release/libKortexApiCpp.a )
+
+# Link against the Casadi library
+target_link_libraries(KinovaCompliance ${CASADI_LIBRARIES})
+
 
 # Include directories for your project
 target_include_directories(KinovaCompliance PRIVATE include/)
