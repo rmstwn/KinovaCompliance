@@ -253,8 +253,6 @@ void performDynamicCalculations(ExampleArgs parsed_args)
         std::cout << "Result of jacobian function:" << std::endl;
         std::cout << jacobian_result << std::endl;
 
-        casadi::
-
         // Sleep for a short duration (simulate dynamic calculation rate)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
