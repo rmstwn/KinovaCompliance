@@ -253,6 +253,11 @@ void performDynamicCalculations(ExampleArgs parsed_args)
         std::cout << "Result of jacobian function:" << std::endl;
         std::cout << jacobian_result << std::endl;
 
+        // Compute Gravity vector
+        std::string gravity = kin_dyn.computeGravity();
+        std::cout << "Result of Gravity function:" << std::endl;
+        std::cout << gravity << std::endl;
+
         // Sleep for a short duration (simulate dynamic calculation rate)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

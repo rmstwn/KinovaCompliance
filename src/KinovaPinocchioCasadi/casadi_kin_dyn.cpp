@@ -67,7 +67,12 @@ namespace casadi_kin_dyn
 
         std::string aba();
 
-        void setJointPositions(const std::vector<double> &joint_positions);
+        std::string computeGravity();
+
+        void set_q(const std::vector<double> &joint_positions);
+        void set_qdot(const std::vector<double> &joint_velocities);
+        void set_qddot(const std::vector<double> &joint_accelerations);
+        void set_tau(const std::vector<double> &joint_currrents);
 
     private:
         typedef casadi::SX Scalar;
@@ -124,7 +129,7 @@ namespace casadi_kin_dyn
         // std::cout << "_tau: " << _tau << std::endl;
     }
 
-    void CasadiKinDyn::Impl::setJointPositions(const std::vector<double> &joint_positions)
+    void CasadiKinDyn::Impl::set_q(const std::vector<double> &joint_positions)
     {
         std::vector<casadi::SX> q_values;
         for (const auto &val : joint_positions)
@@ -133,6 +138,33 @@ namespace casadi_kin_dyn
         }
 
         _q = casadi::SX::vertcat(q_values); // Convert to casadi::SX
+    }
+
+    void CasadiKinDyn::Impl::set_qdot(const std::vector<double> &joint_velocities)
+    {
+        std::vector<casadi::SX> qdot_values;
+        for (const auto &val : joint_velocities)
+        {
+            qdot_values.push_back(casadi::SX(val));
+        }
+
+        _qdot = casadi::SX::vertcat(qdot_values); // Convert to casadi::SX
+    }
+
+    void CasadiKinDyn::Impl::set_qddot(const std::vector<double> &joint_accelerations)
+    {
+        std::vector<casadi::SX> qddot_values;
+        for (const auto &val : joint_accelerations)
+        {
+            qddot_values.push_back(casadi::SX(val));
+        }
+
+        _qddot = casadi::SX::vertcat(qddot_values); // Convert to casadi::SX
+    }
+
+    void CasadiKinDyn::Impl::set_tau(const std::vector<double> &joint_currents)
+    {
+
     }
 
     std::vector<double> CasadiKinDyn::Impl::q_min() const
@@ -455,6 +487,22 @@ namespace casadi_kin_dyn
         return ss.str();
     }
 
+    // add custom function;
+    std::string CasadiKinDyn::Impl::computeGravity()
+    {
+        auto model = _model_dbl.cast<Scalar>();
+        pinocchio::DataTpl<Scalar> data(model);
+
+        pinocchio::computeGeneralizedGravity(model, data, cas_to_eig(_q));
+
+        // Construct the output string with function name, arguments, and values
+        std::stringstream ss;
+        ss << "_q: " << _q << std::endl;
+        ss << "g: [" << data.g << "]" << std::endl;
+
+        return ss.str();
+    }
+
     CasadiKinDyn::Impl::VectorXs CasadiKinDyn::Impl::cas_to_eig(const casadi::SX &cas)
     {
         VectorXs eig(cas.size1());
@@ -590,6 +638,12 @@ namespace casadi_kin_dyn
         return impl().potentialEnergy();
     }
 
+    // Custom function
+    std::string CasadiKinDyn::computeGravity()
+    {
+        return impl().computeGravity();
+    }
+
     std::vector<double> CasadiKinDyn::q_min() const
     {
         return impl().q_min();
@@ -605,9 +659,24 @@ namespace casadi_kin_dyn
         return impl().joint_names();
     }
 
-    void CasadiKinDyn::setJointPositions(const std::vector<double> &joint_positions)
+    void CasadiKinDyn::set_q(const std::vector<double> &joint_positions)
     {
-        _impl->setJointPositions(joint_positions);
+        _impl->set_q(joint_positions);
+    }
+
+    void CasadiKinDyn::set_qdot(const std::vector<double> &joint_velocities)
+    {
+        _impl->set_qdot(joint_velocities);
+    }
+
+    void CasadiKinDyn::set_qddot(const std::vector<double> &joint_accelerations)
+    {
+        _impl->set_qddot(joint_accelerations);
+    }
+
+    void CasadiKinDyn::set_tau(const std::vector<double> &joint_currents)
+    {
+        _impl->set_tau(joint_currents);
     }
 
 }
