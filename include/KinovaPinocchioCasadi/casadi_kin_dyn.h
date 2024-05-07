@@ -48,7 +48,7 @@ namespace casadi_kin_dyn
 
     std::string potentialEnergy();
 
-    std::string computeGravity();
+    std::vector<double> computeGravity();
 
     std::vector<double> q_min() const;
 

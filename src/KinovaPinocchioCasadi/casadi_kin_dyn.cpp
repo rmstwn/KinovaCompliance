@@ -67,7 +67,7 @@ namespace casadi_kin_dyn
 
         std::string aba();
 
-        std::string computeGravity();
+        std::vector<double> computeGravity();
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
@@ -164,7 +164,6 @@ namespace casadi_kin_dyn
 
     void CasadiKinDyn::Impl::set_tau(const std::vector<double> &joint_currents)
     {
-
     }
 
     std::vector<double> CasadiKinDyn::Impl::q_min() const
@@ -488,19 +487,36 @@ namespace casadi_kin_dyn
     }
 
     // add custom function;
-    std::string CasadiKinDyn::Impl::computeGravity()
+    // std::vector<double> CasadiKinDyn::Impl::computeGravity()
+    // {
+    //     auto model = _model_dbl.cast<Scalar>();
+    //     pinocchio::DataTpl<Scalar> data(model);
+
+    //     pinocchio::computeGeneralizedGravity(model, data, cas_to_eig(_q));
+
+    //     // Construct the output string with function name, arguments, and values
+    //     std::stringstream ss;
+    //     ss << "_q: " << _q << std::endl;
+    //     ss << "g: [" << data.g << "]" << std::endl;
+
+    //     return ss.str();
+    // }
+
+    std::vector<double> CasadiKinDyn::Impl::computeGravity()
     {
         auto model = _model_dbl.cast<Scalar>();
         pinocchio::DataTpl<Scalar> data(model);
 
         pinocchio::computeGeneralizedGravity(model, data, cas_to_eig(_q));
 
-        // Construct the output string with function name, arguments, and values
-        std::stringstream ss;
-        ss << "_q: " << _q << std::endl;
-        ss << "g: [" << data.g << "]" << std::endl;
+        // Copy the elements of data.g into a std::vector<double>
+        std::vector<double> gravity(data.g.size());
+        for (size_t i = 0; i < data.g.size(); ++i)
+        {
+            gravity[i] = static_cast<double>(data.g(i));
+        }
 
-        return ss.str();
+        return gravity;
     }
 
     CasadiKinDyn::Impl::VectorXs CasadiKinDyn::Impl::cas_to_eig(const casadi::SX &cas)
@@ -639,7 +655,7 @@ namespace casadi_kin_dyn
     }
 
     // Custom function
-    std::string CasadiKinDyn::computeGravity()
+    std::vector<double> CasadiKinDyn::computeGravity()
     {
         return impl().computeGravity();
     }
