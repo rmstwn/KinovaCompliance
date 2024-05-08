@@ -62,11 +62,11 @@ private:
     double K_rot;
     double gain_rot_MAX;
 
-    Eigen::Vector3d dx_d;
-    Eigen::Vector3d ddx_d;
-    Eigen::Vector3d pref_x;
-    Eigen::Vector3d x_e;
-    Eigen::Vector3d dx_e;
+    // Eigen::Vector3d dx_d;
+    // Eigen::Vector3d ddx_d;
+    // Eigen::Vector3d pref_x;
+    // Eigen::Vector3d x_e;
+    // Eigen::Vector3d dx_e;
 
     bool active;
     bool comp_grav;

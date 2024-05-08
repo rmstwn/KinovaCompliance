@@ -370,11 +370,67 @@ std::vector<double> &operator+=(std::vector<double> &lhs, const std::vector<doub
     return lhs;
 }
 
-std::vector<double> ratios = {1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
+// Define the position and ranges map
+std::unordered_map<int, std::pair<int, int>> positionRanges = {
+    {0, {-159, 159}},
+    {1, {-159, 159}},
+    {2, {-159, 159}},
+    {3, {-154, 154}},
+    {4, {-154, 154}},
+    {5, {-154, 154}}};
+
+std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
+
+// double get_position(int joint)
+// {
+//     // Check if joint index is valid
+//     if (joint < 0 || joint >= feedback.actuators.size())
+//     {
+//         std::cerr << "Invalid joint index!" << std::endl;
+//         return 0.0;
+//     }
+
+//     // Get the position of the joint
+//     double position = feedback.actuators[joint].position;
+
+//     // Convert position to degrees if not in simulation mode
+//     if (!simulate)
+//     {
+//         position = std::fmod(position, 360.0); // Ensure position is within [0, 360)
+//         if (position < 0)
+//             position += 360.0;
+//     }
+
+//     // Retrieve the lower and upper bounds for the given joint index
+//     double lower_bound = positionRanges[joint].first;
+//     double upper_bound = positionRanges[joint].second;
+
+//     // Adjust position based on bounds
+//     position -= (position > upper_bound) ? 360.0 : 0.0;
+
+//     // Convert position to radians
+//     position = position * (M_PI / 180.0);
+
+//     return position;
+// }
 
 bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::BaseCyclic::BaseCyclicClient *base_cyclic, k_api::ActuatorConfig::ActuatorConfigClient *actuator_config)
 {
     bool return_status = true;
+
+    // Get actuator count
+    unsigned int actuator_count = base->GetActuatorCount().count();
+
+    // Clearing faults
+    try
+    {
+        base->ClearFaults();
+    }
+    catch (...)
+    {
+        std::cout << "Unable to clear robot faults" << std::endl;
+        return false;
+    }
 
     // You should change here to set up your own URDF file or just pass it as an argument of this example.
     const std::string urdf_filename = PINOCCHIO_MODEL_DIR + std::string("/GEN3-LITE_custom.urdf");
@@ -411,37 +467,17 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         base->SetServoingMode(servoingMode);
         base_feedback = base_cyclic->RefreshFeedback();
 
-        // Clearing faults
-        try
-        {
-            base->ClearFaults();
-        }
-        catch (...)
-        {
-            std::cout << "Unable to clear robot faults" << std::endl;
-            return false;
-        }
-
-        int actuator_count = base->GetActuatorCount().count();
-
-        // Initialize each actuator to its current position
-        for (int i = 0; i < actuator_count; i++)
+        // Initialize each actuator to their current position
+        for (unsigned int i = 0; i < actuator_count; i++)
         {
             commands.push_back(base_feedback.actuators(i).position());
+
+            // Save the current actuator position, to avoid a following error
             base_command.add_actuators()->set_position(base_feedback.actuators(i).position());
         }
 
         // Send a first frame
         base_feedback = base_cyclic->Refresh(base_command);
-
-        // Set first actuator in torque mode now that the command is equal to measure
-        auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-        control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::CURRENT);
-
-        for (int i = 1; i < actuator_count; i++)
-        {
-            actuator_config->SetControlMode(control_mode_message, i);
-        }
 
         // Retrieve feedback data from the queue
         FeedbackData data;
@@ -454,14 +490,102 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             feedbackQueue.pop();
         }
 
-        // Convert positions from degrees to radians
+        // // Convert positions from degrees to radians
+        // std::vector<double> positionsInRadians;
+        // for (const auto &pos_deg : data.positions)
+        // {
+        //     positionsInRadians.push_back(pos_deg * (M_PI / 180.0));
+        // }
+
+        // Vector to store positions in radians
         std::vector<double> positionsInRadians;
-        for (const auto &pos_deg : data.positions)
+        // Iterate over each position in degrees
+        for (size_t i = 0; i < data.positions.size(); ++i)
         {
-            positionsInRadians.push_back(pos_deg * (M_PI / 180.0));
+            double pos_deg = data.positions[i];
+
+            // Ensure position is within [0, 360)
+            pos_deg = std::fmod(pos_deg, 360.0);
+            if (pos_deg < 0)
+                pos_deg += 360.0;
+
+            // Retrieve the lower and upper bounds for the given joint index
+            double lower_bound = positionRanges[i].first;
+            double upper_bound = positionRanges[i].second;
+
+            // Adjust position based on bounds
+            pos_deg -= (pos_deg > upper_bound) ? 360.0 : 0.0;
+
+            // Convert position to radians and add to positionsInRadians
+            double pos_rad = pos_deg * (M_PI / 180.0);
+            positionsInRadians.push_back(pos_rad);
         }
 
         kin_dyn.set_q(positionsInRadians); // Set the joint positions
+        kin_dyn.set_targetx();
+
+        // Set first actuator in torque mode now that the command is equal to measure
+        auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
+        control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::CURRENT);
+
+        // for (int i = 1; i < 8; i++)
+        // {
+        //     actuator_config->SetControlMode(control_mode_message, i);
+        // }
+
+        actuator_config->SetControlMode(control_mode_message, 1);
+        actuator_config->SetControlMode(control_mode_message, 2);
+        actuator_config->SetControlMode(control_mode_message, 3);
+        actuator_config->SetControlMode(control_mode_message, 4);
+        actuator_config->SetControlMode(control_mode_message, 5);
+        // actuator_config->SetControlMode(control_mode_message, 6);
+
+        // std::vector<float> init_delta_position;
+        // std::vector<float> init_last_torque;
+        // std::vector<float> init_first_current;
+
+        // for (int i = 0; i < 5; i++)
+        // {
+        //     init_first_current[i] = base_feedback.actuators(i).current_motor();
+        // }
+
+        // for (int i = 1; i < 3; i++)
+        // {
+        //     // Initial delta between first and last actuator
+        //     init_delta_position[i] = base_feedback.actuators(i).position() - base_feedback.actuators(actuator_count - 1).position();
+
+        //     // Initial first and last actuator torques; avoids unexpected movement due to torque offsets
+        //     float init_last_torque = base_feedback.actuators(actuator_count - 1).torque();
+        //     float init_first_torque = -base_feedback.actuators(i).torque(); // Torque measure is reversed compared to actuator direction
+        // }
+
+        // // Initial delta between first and last actuator
+        // float init_delta_position = base_feedback.actuators(0).position() - base_feedback.actuators(actuator_count - 1).position();
+
+        // Initial first and last actuator torques; avoids unexpected movement due to torque offsets
+        float init_last_current = base_feedback.actuators(actuator_count - 1).current_motor();
+        float init_first_current = -base_feedback.actuators(0).current_motor(); // Torque measure is reversed compared to actuator direction
+        float current_amplification = 0.5;
+
+        // // Retrieve feedback data from the queue
+        // FeedbackData data;
+        // {
+        //     std::unique_lock<std::mutex> lock(queueMutex);
+        //     // Wait until the queue is not empty
+        //     queueCondition.wait(lock, []
+        //                         { return !feedbackQueue.empty(); });
+        //     data = feedbackQueue.front();
+        //     feedbackQueue.pop();
+        // }
+
+        // // Convert positions from degrees to radians
+        // std::vector<double> positionsInRadians;
+        // for (const auto &pos_deg : data.positions)
+        // {
+        //     positionsInRadians.push_back(pos_deg * (M_PI / 180.0));
+        // }
+        // kin_dyn.set_q(positionsInRadians); // Set the joint positions
+        // kin_dyn.set_q(data.positions); // Set the joint positions
 
         // int actuator_device_id = 2;
         // actuator_config->SetControlMode(control_mode_message, actuator_device_id);
@@ -473,14 +597,60 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             if (now - last > 1000)
             {
 
-                std::cout << "Current : " << data.currents << std::endl;
+                // Retrieve feedback data from the queue
+                FeedbackData data;
+                {
+                    std::unique_lock<std::mutex> lock(queueMutex);
+                    // Wait until the queue is not empty
+                    queueCondition.wait(lock, []
+                                        { return !feedbackQueue.empty(); });
+                    data = feedbackQueue.front();
+                    feedbackQueue.pop();
+                }
 
-                std::cout << "Pos : " << positionsInRadians << std::endl;
+                // // Convert positions from degrees to radians
+                // std::vector<double> positionsInRadians;
+                // for (const auto &pos_deg : data.positions)
+                // {
+                //     positionsInRadians.push_back(pos_deg * (M_PI / 180.0));
+                // }
+
+                // Vector to store positions in radians
+                std::vector<double> positionsInRadians;
+                // Iterate over each position in degrees
+                for (size_t i = 0; i < data.positions.size(); ++i)
+                {
+                    double pos_deg = data.positions[i];
+
+                    // Ensure position is within [0, 360)
+                    pos_deg = std::fmod(pos_deg, 360.0);
+                    if (pos_deg < 0)
+                        pos_deg += 360.0;
+
+                    // Retrieve the lower and upper bounds for the given joint index
+                    double lower_bound = positionRanges[i].first;
+                    double upper_bound = positionRanges[i].second;
+
+                    // Adjust position based on bounds
+                    pos_deg -= (pos_deg > upper_bound) ? 360.0 : 0.0;
+
+                    // Convert position to radians and add to positionsInRadians
+                    double pos_rad = pos_deg * (M_PI / 180.0);
+                    positionsInRadians.push_back(pos_rad);
+                }
+
+                kin_dyn.set_q(positionsInRadians); // Set the joint positions
+                // kin_dyn.set_qdot(data.velocities); // Set the joint positions
 
                 std::vector<double> gravity = kin_dyn.computeGravity();
-                std::cout << "gravity : " << gravity << std::endl;
+                // std::vector<double> Torque_CI = kin_dyn.CartesianImpedance();
 
-                std::cout << "ratios : " << ratios << std::endl;
+                // std::cout << "Pos : " << positionsInRadians << std::endl;
+                // std::cout << "Vel : " << data.velocities << std::endl;
+                // std::cout << "Current : " << data.currents << std::endl;
+                // std::cout << "ratios : " << ratios << std::endl;
+                // std::cout << "gravity : " << gravity << std::endl;
+                // std::cout << "Torque CI : " << Torque_CI << std::endl;
 
                 // // Print sizes of gravity and ratios
                 // std::cout << "Size of gravity: " << gravity.size() << std::endl;
@@ -490,7 +660,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 // gravityCompensation.reserve(gravity.size()); // Reserve space to avoid reallocations
 
                 // // Perform element-wise multiplication
-                // std::transform(gravity.begin(), gravity.end(), ratios.begin(), std::back_inserter(gravityCompensation),
+                // std::transform(gravity.begin(), gravity  .end(), ratios.begin(), std::back_inserter(gravityCompensation),
                 //                std::multiplies<double>());
 
                 // // Add the element-wise product to current
@@ -499,14 +669,27 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
                 // std::cout << "Current : " << gravity << std::endl;
 
-                // Verify sizes of gravity and ratios
-                if (gravity.size() != ratios.size())
-                {
-                    throw std::invalid_argument("Gravity and ratios vectors have different sizes");
-                }
+                // // Verify sizes of gravity and ratios
+                // if (gravity.size() != ratios.size())
+                // {
+                //     throw std::invalid_argument("Gravity and ratios vectors have different sizes");
+                // }
 
                 // Initialize result vector with the size of current
-                std::vector<double> result(currentCommand.size(), 0.0);
+                std::vector<double> resultCommand(currentCommand.size(), 0.0);
+
+                // // Perform element-wise addition manually
+                // for (size_t i = 0; i < currentCommand.size(); ++i)
+                // {
+                //     // Convert scalar values to vectors
+                //     std::vector<double> TorqueCIScalar = {Torque_CI[i]};
+                //     std::vector<double> ratiosScalar = {ratios[i]};
+
+                //     // Perform addition
+                //     result[i] += currentCommand[i] + (TorqueCIScalar[0] * ratiosScalar[0]);
+                // }
+
+                // std::cout << "result TorqueCIScalar : " << result << std::endl;
 
                 // Perform element-wise addition manually
                 for (size_t i = 0; i < currentCommand.size(); ++i)
@@ -516,42 +699,92 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                     std::vector<double> ratiosScalar = {ratios[i]};
 
                     // Perform addition
-                    result[i] += currentCommand[i] + (gravityScalar[0] * ratiosScalar[0]);
+                    resultCommand[i] += currentCommand[i] + (gravityScalar[0] * ratiosScalar[0]);
                 }
 
-                std::cout << "result : " << result << std::endl;
+                // std::cout << "result total: " << result << std::endl;
 
                 // base_command.mutable_actuators(1)->set_current_motor(result[1]);
-
-                for (int i = 0; i < actuator_count; i++)
-                {
-                    base_command.mutable_actuators(i)->set_current_motor(result[i]);
-                }
 
                 // for (int i = 0; i < actuator_count; i++)
                 // {
                 //     // // Move only the last actuator to prevent collision
                 //     if (i == actuator_count - 1)
                 //     {
-                //         // commands[i] += (0.001f * velocity);
-                //         // base_command.mutable_actuators(i)->set_position(fmod(commands[i], 360.0f));
-                //         // base_command.mutable_actuators(i)->set_torque_joint(1.0);
                 //         base_command.mutable_actuators(i)->set_current_motor(0.0f);
                 //     }
                 // }
 
-                // base_command.mutable_actuators(3)->set_current_motor(0.1f);
-                // base_command.mutable_actuators(4)->set_current_motor(0.1f);
-                // base_command.mutable_actuators(0)->set_current_motor(0.3f);
+                // for (int i = 0; i < actuator_count; i++)
+                // {
+                //     base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
+                //     base_command.mutable_actuators(i)->set_current_motor(result[i]);
+                // }
+
+                base_command.mutable_actuators(0)->set_position(base_feedback.actuators(0).position());
+                base_command.mutable_actuators(1)->set_position(base_feedback.actuators(1).position());
+                base_command.mutable_actuators(2)->set_position(base_feedback.actuators(2).position());
+                base_command.mutable_actuators(3)->set_position(base_feedback.actuators(3).position());
+                base_command.mutable_actuators(4)->set_position(base_feedback.actuators(4).position());
+                // base_command.mutable_actuators(5)->set_position(base_feedback.actuators(5).position());
+
+                base_command.mutable_actuators(0)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).torque() - init_last_current)));
+                base_command.mutable_actuators(1)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).torque() - init_last_current)));
+                base_command.mutable_actuators(2)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).torque() - init_last_current)));
+                base_command.mutable_actuators(3)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).torque() - init_last_current)));
+                base_command.mutable_actuators(4)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).torque() - init_last_current)));
+
+                base_command.mutable_actuators(0)->set_current_motor(resultCommand[0]);
+                base_command.mutable_actuators(1)->set_current_motor(resultCommand[1]);
+                base_command.mutable_actuators(2)->set_current_motor(resultCommand[2]);
+                base_command.mutable_actuators(3)->set_current_motor(resultCommand[3]);
+                base_command.mutable_actuators(4)->set_current_motor(resultCommand[4]);
+
+                // base_command.mutable_actuators(0)->set_current_motor(resultCommand[0]);
+                // base_command.mutable_actuators(1)->set_current_motor(resultCommand[1]);
+                // base_command.mutable_actuators(2)->set_current_motor(resultCommand[2]);
+                // base_command.mutable_actuators(3)->set_current_motor(resultCommand[3]);
+                // base_command.mutable_actuators(4)->set_current_motor(resultCommand[4]);
+                // base_command.mutable_actuators(5)->set_current_motor(resultCommand[5]);
+
+                // for (int i = 0; i < actuator_count; i++)
+                // {
+                //     base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
+                //     base_command.mutable_actuators(i)->set_current_motor(init_first_current + (current_amplification * (base_feedback.actuators(actuator_count - 1).current_motor() - init_last_current)));
+
+                //     base_command.mutable_actuators(i)->set_current_motor(result[i]);
+                // }
+
+                // First actuator position is sent as a command to last actuator
+                // base_command.mutable_actuators(actuator_count - 1)->set_position(base_feedback.actuators(0).position() - init_delta_position);
+
+                // Incrementing identifier ensures actuators can reject out of time frames
+                base_command.set_frame_id(base_command.frame_id() + 1);
+                if (base_command.frame_id() > 65535)
+                    base_command.set_frame_id(0);
+
+                for (int idx = 0; idx < actuator_count; idx++)
+                {
+                    base_command.mutable_actuators(idx)->set_command_id(base_command.frame_id());
+                }
 
                 try
                 {
                     base_feedback = base_cyclic->Refresh(base_command, 0);
-                    base_cyclic->Refresh_callback(base_command, 0);
+                }
+                catch (k_api::KDetailedException &ex)
+                {
+                    std::cout << "Kortex exception: " << ex.what() << std::endl;
+
+                    std::cout << "Error sub-code: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code()))) << std::endl;
+                }
+                catch (std::runtime_error &ex2)
+                {
+                    std::cout << "runtime error: " << ex2.what() << std::endl;
                 }
                 catch (...)
                 {
-                    timeout++;
+                    std::cout << "Unknown error." << std::endl;
                 }
 
                 timer_count++;

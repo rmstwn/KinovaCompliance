@@ -49,6 +49,8 @@ namespace casadi_kin_dyn
     std::string potentialEnergy();
 
     std::vector<double> computeGravity();
+    
+    std::vector<double> CartesianImpedance();
 
     std::vector<double> q_min() const;
 
@@ -60,6 +62,8 @@ namespace casadi_kin_dyn
     void set_qdot(const std::vector<double>& joint_velocities);
     void set_qddot(const std::vector<double>& joint_velocities);
     void set_tau(const std::vector<double>& joint_currrents);
+
+    void set_targetx();
 
     ~CasadiKinDyn();
 
