@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include "KinovaClient/utilities.h"
 
+
 //Helper function to parse program arguments
 ExampleArgs ParseExampleArguments(int argc, char *argv[])
 {
@@ -41,4 +42,15 @@ ExampleArgs ParseExampleArguments(int argc, char *argv[])
     }
     
     return resultArgs;
+}
+
+bool waitMicroSeconds(const sc::time_point<sc::steady_clock> &pStartTime, const sc::microseconds &pDuration)
+{
+    auto now = sc::steady_clock::now();
+    if (now - pStartTime > pDuration) return false;
+
+    do {
+        now = sc::steady_clock::now();
+    } while (now - pStartTime < pDuration);
+    return true;
 }
