@@ -29,6 +29,10 @@
 
 #include <urdf_parser/urdf_parser.h>
 
+// Robot Properties
+std::vector<double> ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
+std::vector<double> frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
+
 namespace casadi_kin_dyn
 {
 
@@ -69,12 +73,15 @@ namespace casadi_kin_dyn
         std::string aba();
 
         std::vector<double> computeGravity();
-        std::vector<double> CartesianImpedance();
+        std::vector<double> cartesianImpedance();
+        std::vector<double> compensateFrictionInMovingDirection();
+        std::vector<double> compensateFrictionInCurrentDirection();
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
         void set_qddot(const std::vector<double> &joint_accelerations);
-        void set_tau(const std::vector<double> &joint_currrents);
+        void set_tau(const std::vector<double> &joint_torques);
+        void set_current(const std::vector<double> &joint_currrents);
 
         void set_targetx();
 
@@ -88,7 +95,7 @@ namespace casadi_kin_dyn
         static casadi::SX eigmat_to_cas(const MatrixXs &eig);
 
         pinocchio::Model _model_dbl;
-        casadi::SX _q, _qdot, _qddot, _tau;
+        casadi::SX _q, _qdot, _qddot, _tau, _current;
         std::vector<double> _q_min, _q_max;
 
         casadi::SX target_x;
@@ -98,9 +105,21 @@ namespace casadi_kin_dyn
 
         Eigen::Vector3d dx;
 
-        // Define the scalar values
+        // Robot Properties
+        // Eigen::VectorXd ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
+        // Eigen::VectorXd frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
+
+        // // Robot Properties
+        // std::vector<double> ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
+        // std::vector<double> frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
+
+        // Cartesian impedance:
+        //  Define the scalar values
         double Kd_scalar = 40.0;
         double Dd_scalar = 3.0;
+        double thr_cart_error = 0.001; // m
+        double error_cart_MAX = 0.1;   // m
+        double thr_dynamic = 0.3;      // rad/s
 
         // Create identity matrices and scale them
         Eigen::MatrixXd Kd = Kd_scalar * Eigen::MatrixXd::Identity(3, 3);
@@ -133,6 +152,7 @@ namespace casadi_kin_dyn
         _qdot = casadi::SX::sym("v", _model_dbl.nv);
         _qddot = casadi::SX::sym("a", _model_dbl.nv);
         _tau = casadi::SX::sym("tau", _model_dbl.nv);
+        _current = casadi::SX::sym("current", _model_dbl.nv);
 
         _q_min.resize(_model_dbl.lowerPositionLimit.size());
         for (unsigned int i = 0; i < _model_dbl.lowerPositionLimit.size(); ++i)
@@ -181,8 +201,26 @@ namespace casadi_kin_dyn
         _qddot = casadi::SX::vertcat(qddot_values); // Convert to casadi::SX
     }
 
-    void CasadiKinDyn::Impl::set_tau(const std::vector<double> &joint_currents)
+    void CasadiKinDyn::Impl::set_tau(const std::vector<double> &joint_torques)
     {
+        std::vector<casadi::SX> tau_values;
+        for (const auto &val : joint_torques)
+        {
+            tau_values.push_back(casadi::SX(val));
+        }
+
+        _tau = casadi::SX::vertcat(tau_values); // Convert to casadi::SX
+    }
+
+    void CasadiKinDyn::Impl::set_current(const std::vector<double> &joint_currents)
+    {
+        std::vector<casadi::SX> current_values;
+        for (const auto &val : joint_currents)
+        {
+            current_values.push_back(casadi::SX(val));
+        }
+
+        _current = casadi::SX::vertcat(current_values); // Convert to casadi::SX
     }
 
     void CasadiKinDyn::Impl::set_targetx()
@@ -517,8 +555,7 @@ namespace casadi_kin_dyn
         return ss.str();
     }
 
-    // add custom function;
-    ///////////////////////////////////////
+    // add custom function
 
     // std::vector<double> CasadiKinDyn::Impl::computeGravity()
     // {
@@ -552,7 +589,7 @@ namespace casadi_kin_dyn
         return gravity;
     }
 
-    std::vector<double> CasadiKinDyn::Impl::CartesianImpedance()
+    std::vector<double> CasadiKinDyn::Impl::cartesianImpedance()
     {
         std::vector<double> x_e(3, 0.0);
 
@@ -736,6 +773,140 @@ namespace casadi_kin_dyn
         return result;
     }
 
+    std::vector<double> CasadiKinDyn::Impl::compensateFrictionInMovingDirection()
+    {
+        // std::cout << "_q : " << _q << std::endl;
+        // std::cout << "_qdot : " << _qdot << std::endl;
+        // std::cout << "frictions : " << frictions << std::endl;
+
+        // Check if sizes match
+        if (_qdot.size1() != frictions.size())
+        {
+            std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
+            return std::vector<double>();
+        }
+
+        // Convert _qdot to Eigen::VectorXd
+        Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
+        for (int i = 0; i < _qdot.size1(); ++i)
+        {
+            dq(i) = casadi::DM(_qdot(i)).scalar();
+        }
+
+        // Compute frac_v
+        Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
+
+        // Compute sign_dq
+        Eigen::VectorXd sign_dq = dq.array().sign();
+
+        // Convert frictions to Eigen::VectorXd for element-wise multiplication
+        Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
+        for (int i = 0; i < _qdot.size1(); ++i)
+        {
+            frictions_vector(i) = frictions[i];
+        }
+
+        // Compute the friction compensation
+        Eigen::VectorXd friction_compensation = frac_v.array() * sign_dq.array() * frictions_vector.array();
+
+        // Convert the result back to std::vector<double>
+        std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
+
+        return result;
+    }
+
+    std::vector<double> CasadiKinDyn::Impl::compensateFrictionInCurrentDirection()
+    {
+        // std::cout << "_q : " << _q << std::endl;
+        std::cout << "_qdot : " << _qdot << std::endl;
+        // std::cout << "frictions : " << frictions << std::endl;
+        std::cout << "_current : " << _current << std::endl;
+
+        // Check if sizes match
+        if (_qdot.size1() != frictions.size())
+        {
+            std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
+            return std::vector<double>();
+        }
+
+        // Convert _qdot to Eigen::VectorXd
+        Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
+        for (int i = 0; i < _qdot.size1(); ++i)
+        {
+            dq(i) = casadi::DM(_qdot(i)).scalar();
+        }
+
+        // Convert _current to Eigen::VectorXd
+        Eigen::VectorXd current = Eigen::VectorXd::Zero(_current.size1());
+        for (int i = 0; i < _current.size1(); ++i)
+        {
+            current(i) = casadi::DM(_current(i)).scalar();
+        }
+
+        // Compute frac_v
+        Eigen::VectorXd frac_v = Eigen::VectorXd::Ones(dq.size());
+        frac_v -= (dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic).cwiseMin(1.0);
+        // Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
+
+        // Compute sign_dq
+        Eigen::VectorXd sign_current = current.array().sign();
+
+        // Convert frictions to Eigen::VectorXd for element-wise multiplication
+        Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
+        for (int i = 0; i < _qdot.size1(); ++i)
+        {
+            frictions_vector(i) = frictions[i];
+        }
+
+        // Compute the friction compensation
+        Eigen::VectorXd friction_compensation = frac_v.array() * sign_current.array() * frictions_vector.array();
+
+        // Convert the result back to std::vector<double>
+        std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
+
+        return result;
+    }
+
+    // Function to convert casadi::SX to std::vector<double>
+    std::vector<double> casadiSxToStdVector(const casadi::SX &sx)
+    {
+        // Check if the matrix is a vector (either row or column vector)
+        if (sx.size1() != 1 && sx.size2() != 1)
+        {
+            throw std::invalid_argument("Input SX is not a vector.");
+        }
+
+        // Evaluate the symbolic matrix to get a dense matrix with numerical values
+        casadi::DM dm = casadi::DM(sx);
+
+        // Determine the size of the vector
+        size_t size = dm.size1() * dm.size2();
+
+        // Create a std::vector to hold the elements
+        std::vector<double> result(size);
+
+        // Copy the elements from casadi::DM to std::vector<double>
+        for (size_t i = 0; i < size; ++i)
+        {
+            result[i] = dm(i).scalar();
+        }
+
+        return result;
+    }
+
+    // Function to convert std::vector<double> to Eigen::VectorXd
+    Eigen::VectorXd stdVectorToEigenVector(const std::vector<double> &vec)
+    {
+        Eigen::VectorXd eigenVec(vec.size());
+        for (size_t i = 0; i < vec.size(); ++i)
+        {
+            eigenVec[i] = vec[i];
+        }
+        return eigenVec;
+    }
+
+    ///////////////////////////////////////
+
     CasadiKinDyn::Impl::VectorXs CasadiKinDyn::Impl::cas_to_eig(const casadi::SX &cas)
     {
         VectorXs eig(cas.size1());
@@ -877,10 +1048,22 @@ namespace casadi_kin_dyn
         return impl().computeGravity();
     }
 
-    std::vector<double> CasadiKinDyn::CartesianImpedance()
+    std::vector<double> CasadiKinDyn::cartesianImpedance()
     {
-        return impl().CartesianImpedance();
+        return impl().cartesianImpedance();
     }
+
+    std::vector<double> CasadiKinDyn::compensateFrictionInMovingDirection()
+    {
+        return impl().compensateFrictionInMovingDirection();
+    }
+
+    std::vector<double> CasadiKinDyn::compensateFrictionInCurrentDirection()
+    {
+        return impl().compensateFrictionInCurrentDirection();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
 
     std::vector<double> CasadiKinDyn::q_min() const
     {
@@ -912,9 +1095,14 @@ namespace casadi_kin_dyn
         _impl->set_qddot(joint_accelerations);
     }
 
-    void CasadiKinDyn::set_tau(const std::vector<double> &joint_currents)
+    void CasadiKinDyn::set_tau(const std::vector<double> &joint_torques)
     {
-        _impl->set_tau(joint_currents);
+        _impl->set_tau(joint_torques);
+    }
+
+    void CasadiKinDyn::set_current(const std::vector<double> &joint_currents)
+    {
+        _impl->set_current(joint_currents);
     }
 
     // void CasadiKinDyn::set_targetx(const std::vector<double> &input_target_x)

@@ -4,6 +4,12 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <Eigen/Dense>
+#include <Eigen/Core>
+
+// Robot Properties
+extern std::vector<double> ratios;
+extern std::vector<double> frictions;
 
 namespace casadi_kin_dyn
 {
@@ -25,43 +31,33 @@ namespace casadi_kin_dyn
     int nv() const;
 
     std::string rnea();
-
     std::string computeCentroidalDynamics();
-
     std::string ccrba();
-
     std::string crba();
-
     std::string aba();
-
     std::string fk(std::string link_name);
-
     std::string centerOfMass();
-
     std::string jacobian(std::string link_name, ReferenceFrame ref);
-
     std::string frameVelocity(std::string link_name, ReferenceFrame ref);
-
     std::string frameAcceleration(std::string link_name, ReferenceFrame ref);
-
     std::string kineticEnergy();
-
     std::string potentialEnergy();
 
+    // custom
     std::vector<double> computeGravity();
-    
-    std::vector<double> CartesianImpedance();
+    std::vector<double> cartesianImpedance();
+    std::vector<double> compensateFrictionInMovingDirection();
+    std::vector<double> compensateFrictionInCurrentDirection();
 
     std::vector<double> q_min() const;
-
     std::vector<double> q_max() const;
-
     std::vector<std::string> joint_names() const;
 
     void set_q(const std::vector<double> &joint_positions);
-    void set_qdot(const std::vector<double>& joint_velocities);
-    void set_qddot(const std::vector<double>& joint_velocities);
-    void set_tau(const std::vector<double>& joint_currrents);
+    void set_qdot(const std::vector<double> &joint_velocities);
+    void set_qddot(const std::vector<double> &joint_velocities);
+    void set_tau(const std::vector<double> &joint_torques);
+    void set_current(const std::vector<double> &joint_currents);
 
     void set_targetx();
 

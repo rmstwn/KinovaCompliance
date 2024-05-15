@@ -332,14 +332,14 @@ std::unordered_map<int, std::pair<int, int>> positionRanges = {
     {4, {-154, 154}},
     {5, {-154, 154}}};
 
-std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
+// std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
 
 bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::BaseCyclic::BaseCyclicClient *base_cyclic, k_api::ActuatorConfig::ActuatorConfigClient *actuator_config)
 {
     bool return_status = true;
 
-    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(7), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
-    std::vector<double> currentCommand(6, 0.0), TorqueGravity(6, 0.0);
+    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
+    std::vector<double> currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0), TorqueGravity(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0);
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
 
     // Get actuator count
@@ -408,7 +408,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::CURRENT);
 
         // Set to Current Mode
-        for (int actuator_id = 1; actuator_id < 6 ; actuator_id++)
+        for (int actuator_id = 1; actuator_id < 6; actuator_id++)
             actuator_config->SetControlMode(control_mode_message, actuator_id);
 
         const std::vector<double> joint_currents_limits{9.2538, 2.7666, 9.2538, 17.1666, 18.3357, 17.7516};
@@ -416,7 +416,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 60;
+        const int TASK_TIME_LIMIT_SEC = 30;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -461,22 +461,67 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             if (jntPositions[5] > DEG_TO_RAD(180.0))
                 jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
 
+            std::cout << "Joint : " << actuator_count << std::endl;
+
+            std::cout << "Pos : " << jntPositions << std::endl;
+            std::cout << "Vel : " << jntVelocities << std::endl;
+            std::cout << "Current : " << jntCurrents << std::endl;
+            std::cout << "Torque : " << jnt_torque << std::endl;
+            std::cout << "ratios : " << ratios << std::endl;
+            std::cout << "frictions : " << frictions << std::endl;
+
+            // Compute the gravity torque
             kin_dyn.set_q(jntPositions);
-
-            // std::cout << "Here " << actuator_count << std::endl;
-
-            // std::cout << "Pos : " << jntPositions << std::endl;
-            // std::cout << "Vel : " << jntVelocities << std::endl;
-            // std::cout << "Current : " << jntCurrents << std::endl;
-            // std::cout << "ratios : " << ratios << std::endl;
-
             TorqueGravity = kin_dyn.computeGravity();
+            // std::cout << "Compute the gravity torque done " << std::endl;
 
             // Compute desired current for gravity compensation
             for (int i = 0; i < actuator_count; i++)
             {
-                currentCommand[i] = TorqueGravity[i] * ratios[i];
+                currentGravityCommand[i] = (TorqueGravity[i] * ratios[i]);
             }
+
+            // Add friction compensation in the direction the joint is moving.
+            kin_dyn.set_qdot(jntVelocities);
+            // std::cout << "Set vel done" << std::endl;
+            ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
+
+            // Add friction compensation to the given current, when not moving.
+            kin_dyn.set_current(jntCurrents);
+            // std::cout << "Set vel done" << std::endl;
+            ComFrictionCurDir = kin_dyn.compensateFrictionInCurrentDirection();
+
+            // Compute desired current for Friction compensation
+            for (int i = 0; i < actuator_count; i++)
+            {
+                currentFrictionCommand[i] = ComFrictionVelDir[i] + ComFrictionCurDir[i];
+            }
+
+            // Compute the scaling factor
+            std::vector<double> scaling_factor;
+            for (size_t i = 0; i < jntCurrents.size(); ++i)
+            {
+                double factor = jntCurrents[i] * jntCurrents[i] / (frictions[i] * 0.001);
+                scaling_factor.push_back(std::min(1.0, factor));
+            }
+
+            // Compute Total Friction compensation
+            for (int i = 0; i < actuator_count; i++)
+            {
+                currentFrictionCommand[i] = currentFrictionCommand[i] * scaling_factor[i];
+            }
+
+            // Compute Total compensation
+            for (int i = 0; i < actuator_count; i++)
+            {
+                currentCommand[i] = ComFrictionVelDir[i] + currentGravityCommand[i];
+            }
+
+            // Compute desired current for Friction compensation
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     currentCommand[i] = currentGravityCommand[i];
+            // }
 
             // Apply PID control to reach the desired current
             for (size_t i = 0; i < TorqueGravity.size(); ++i)
@@ -497,24 +542,23 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     resultCommand[i] = currentCommand[i] + (gravityScalar[0] * ratiosScalar[0]);
             // }
 
-            std::cout << "Joint : " << actuator_count << std::endl;
-
-            std::cout << "Pos : " << jntPositions << std::endl;
-            std::cout << "Vel : " << jntVelocities << std::endl;
-            std::cout << "Current : " << jntCurrents << std::endl;
-            std::cout << "Torque : " << jnt_torque << std::endl;
-            std::cout << "ratios : " << ratios << std::endl;
             std::cout << "gravity : " << TorqueGravity << std::endl;
+
+            std::cout << "ComFrictionVelDir : " << ComFrictionVelDir << std::endl;
+            std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
+            std::cout << "currentFrictionCommand : " << currentFrictionCommand << std::endl;
+
+            std::cout << "-----------------------------" << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
             std::cout << "pidOutput : " << pidOutput << std::endl;
 
             for (int i = 0; i < actuator_count; i++)
             {
-                // resultCommand[i] = resultCommand[i];
-                // if (resultCommand[i] >= joint_currents_limits[i])
-                //     resultCommand[i] = joint_currents_limits[i] - 0.001;
-                // else if (resultCommand[i] <= -joint_currents_limits[i])
-                //     resultCommand[i] = -joint_currents_limits[i] + 0.001;
+                // pidOutput[i] = pidOutput[i];
+                if (pidOutput[i] >= joint_currents_limits[i])
+                    pidOutput[i] = joint_currents_limits[i] - 0.001;
+                else if (pidOutput[i] <= -joint_currents_limits[i])
+                    pidOutput[i] = -joint_currents_limits[i] + 0.001;
                 base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
                 base_command.mutable_actuators(i)->set_current_motor(pidOutput[i]);
             }
@@ -547,6 +591,16 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 std::cout << "Unknown error." << std::endl;
             }
         }
+
+        std::cout << "Completed" << std::endl;
+
+        // Set first actuator back in position
+        control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
+
+        for (int actuator_id = 1; actuator_id < 6; actuator_id++)
+            actuator_config->SetControlMode(control_mode_message, actuator_id);
+
+        std::cout << "Clean exit" << std::endl;
     }
     catch (k_api::KDetailedException &ex)
     {
