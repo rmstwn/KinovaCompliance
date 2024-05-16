@@ -118,7 +118,7 @@ namespace casadi_kin_dyn
         double Kd_scalar = 40.0;
         double Dd_scalar = 3.0;
         double thr_cart_error = 0.001; // m
-        double error_cart_MAX = 0.1;   // m
+        double error_cart_MAX = 0.1;  // m
         double thr_dynamic = 0.3;      // rad/s
 
         // Create identity matrices and scale them
@@ -610,19 +610,6 @@ namespace casadi_kin_dyn
 
         auto ee_vel_linear = eig_to_cas(eig_vel.head(3));
 
-        // Eigen::Vector3d J = cas_to_eig(ee_vel_linear);
-
-        // // Extract the first three rows of J to get the linear Jacobian
-        // Eigen::MatrixXd J = J_full.topRows(3);
-
-        // Eigen::Matrix<Scalar, 3, 1> eig_vel = J * cas_to_eig(_qdot);
-
-        // Compute dx = J * dq
-        // dx = eig_vel.head<3>();
-
-        // Compute dx
-        // dx = J; // EE linear vel
-
         dx = eig_vel.head<3>().template cast<double>();
 
         std::vector<double> target_x_vec;
@@ -661,7 +648,7 @@ namespace casadi_kin_dyn
         double magnitude = std::sqrt(std::pow(error[0], 2) + std::pow(error[1], 2) + std::pow(error[2], 2));
 
         // Compute x_e if magnitude is above threshold
-        if (magnitude > 0.001)
+        if (magnitude > thr_cart_error)
         {
             std::vector<double> vector;
             for (size_t i = 0; i < error.size(); ++i)
@@ -670,7 +657,7 @@ namespace casadi_kin_dyn
             }
             for (size_t i = 0; i < vector.size(); ++i)
             {
-                x_e[i] = vector[i] * std::min(0.1, magnitude);
+                x_e[i] = vector[i] * std::min(error_cart_MAX, magnitude);
             }
         }
 
@@ -759,6 +746,10 @@ namespace casadi_kin_dyn
         // std::cout << Jacob_transpose << std::endl;
         // std::cout << "f_vec.size() : " << f_vec.size() << " f_vec.rows() : " << f_vec.rows() << " f_vec.cols() : " << f_vec.cols() << std::endl;
         // std::cout << f_vec << std::endl;
+
+        std::cout << "target_x_vec : " << target_x_vec << std::endl;
+        std::cout << "current_x_vec : " << current_x_vec << std::endl;
+        std::cout << "error : " << error << std::endl;
 
         // Eigen::Vector3d Torq = Jacob_transpose.transpose() * f_vec;
         // Eigen::Vector6d Torq = f_vec.transpose() * Jacob;

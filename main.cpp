@@ -20,6 +20,9 @@
 #include <mutex>
 #include <queue>
 #include <condition_variable>
+#include <vector>
+#include <cmath>
+#include <algorithm>
 
 // Mobile base Lib
 #include "KinovaMobile/kinova_mobile.hpp"
@@ -339,7 +342,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     bool return_status = true;
 
     std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
-    std::vector<double> currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0), TorqueGravity(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0);
+    std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
 
     // Get actuator count
@@ -399,9 +402,32 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             commands.push_back(base_feedback.actuators(i).position());
             base_command.add_actuators()->set_position(base_feedback.actuators(i).position());
         }
-
         // Send a first frame
         base_feedback = base_cyclic->Refresh(base_command);
+
+        // get current position for set q
+        base_feedback = base_cyclic->RefreshFeedback();
+
+        for (int i = 0; i < actuator_count; i++)
+        {
+            jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
+            jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
+            jntCurrents[i] = base_feedback.actuators(i).current_motor();
+            jnt_torque[i] = base_feedback.actuators(i).torque(); // nm
+        }
+
+        // Kinova API provides only positive angle values
+        // This operation is required to align the logic with our safety monitor
+        // We need to convert some angles to negative values
+        if (jntPositions[1] > DEG_TO_RAD(180.0))
+            jntPositions[1] = jntPositions[1] - DEG_TO_RAD(360.0);
+        if (jntPositions[3] > DEG_TO_RAD(180.0))
+            jntPositions[3] = jntPositions[3] - DEG_TO_RAD(360.0);
+        if (jntPositions[5] > DEG_TO_RAD(180.0))
+            jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
+
+        kin_dyn.set_q(jntPositions); // Set the joint positions
+        kin_dyn.set_targetx();
 
         // Set last actuator in torque mode now that the command is equal to measure
         auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
@@ -416,7 +442,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 30;
+        const int TASK_TIME_LIMIT_SEC = 60;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -470,8 +496,13 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "ratios : " << ratios << std::endl;
             std::cout << "frictions : " << frictions << std::endl;
 
-            // Compute the gravity torque
+            // Set current pos
             kin_dyn.set_q(jntPositions);
+
+            // Return the current due to cartesian impedance
+            currentImpCommand = kin_dyn.cartesianImpedance();
+
+            // Compute the gravity torque
             TorqueGravity = kin_dyn.computeGravity();
             // std::cout << "Compute the gravity torque done " << std::endl;
 
@@ -486,42 +517,44 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // std::cout << "Set vel done" << std::endl;
             ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
 
-            // Add friction compensation to the given current, when not moving.
-            kin_dyn.set_current(jntCurrents);
-            // std::cout << "Set vel done" << std::endl;
-            ComFrictionCurDir = kin_dyn.compensateFrictionInCurrentDirection();
+            // // Add friction compensation to the given current, when not moving.
+            // kin_dyn.set_current(jntCurrents);
+            // // std::cout << "Set vel done" << std::endl;
+            // ComFrictionCurDir = kin_dyn.compensateFrictionInCurrentDirection();
 
-            // Compute desired current for Friction compensation
-            for (int i = 0; i < actuator_count; i++)
-            {
-                currentFrictionCommand[i] = ComFrictionVelDir[i] + ComFrictionCurDir[i];
-            }
+            // // Compute desired current for Friction compensation
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     currentFrictionCommand[i] = ComFrictionVelDir[i] + ComFrictionCurDir[i];
+            // }
 
-            // Compute the scaling factor
-            std::vector<double> scaling_factor;
-            for (size_t i = 0; i < jntCurrents.size(); ++i)
-            {
-                double factor = jntCurrents[i] * jntCurrents[i] / (frictions[i] * 0.001);
-                scaling_factor.push_back(std::min(1.0, factor));
-            }
+            // // Compute the scaling factor
+            // std::vector<double> scaling_factor;
+            // for (size_t i = 0; i < jntCurrents.size(); ++i)
+            // {
+            //     double factor = jntCurrents[i] * jntCurrents[i] / (frictions[i] * 0.001);
+            //     scaling_factor.push_back(std::min(1.0, factor));
+            // }
 
-            // Compute Total Friction compensation
-            for (int i = 0; i < actuator_count; i++)
-            {
-                currentFrictionCommand[i] = currentFrictionCommand[i] * scaling_factor[i];
-            }
+            // // Compute Total Friction compensation
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     currentFrictionCommand[i] = currentFrictionCommand[i] * scaling_factor[i];
+            // }
+
+            // // Compute Total compensation
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     currentCommand[i] = currentImpCommand[i];
+            //     currentCommand[i] = currentCommand[i] + currentGravityCommand[i] + ComFrictionVelDir[i];
+            // }
 
             // Compute Total compensation
             for (int i = 0; i < actuator_count; i++)
             {
-                currentCommand[i] = ComFrictionVelDir[i] + currentGravityCommand[i];
+                // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
+                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComFrictionVelDir[i];
             }
-
-            // Compute desired current for Friction compensation
-            // for (int i = 0; i < actuator_count; i++)
-            // {
-            //     currentCommand[i] = currentGravityCommand[i];
-            // }
 
             // Apply PID control to reach the desired current
             for (size_t i = 0; i < TorqueGravity.size(); ++i)
@@ -543,24 +576,35 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             std::cout << "gravity : " << TorqueGravity << std::endl;
-
+            std::cout << "currentImpCommand : " << currentImpCommand << std::endl;
+            std::cout << "currentGravityCommand : " << currentGravityCommand << std::endl;
             std::cout << "ComFrictionVelDir : " << ComFrictionVelDir << std::endl;
             std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
             std::cout << "currentFrictionCommand : " << currentFrictionCommand << std::endl;
-
             std::cout << "-----------------------------" << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
             std::cout << "pidOutput : " << pidOutput << std::endl;
 
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     // pidOutput[i] = pidOutput[i];
+            //     if (pidOutput[i] >= joint_currents_limits[i])
+            //         pidOutput[i] = joint_currents_limits[i] - 0.001;
+            //     else if (pidOutput[i] <= -joint_currents_limits[i])
+            //         pidOutput[i] = -joint_currents_limits[i] + 0.001;
+            //     base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
+            //     base_command.mutable_actuators(i)->set_current_motor(pidOutput[i]);
+            // }
+
             for (int i = 0; i < actuator_count; i++)
             {
                 // pidOutput[i] = pidOutput[i];
-                if (pidOutput[i] >= joint_currents_limits[i])
-                    pidOutput[i] = joint_currents_limits[i] - 0.001;
-                else if (pidOutput[i] <= -joint_currents_limits[i])
-                    pidOutput[i] = -joint_currents_limits[i] + 0.001;
+                if (currentCommand[i] >= joint_currents_limits[i])
+                    currentCommand[i] = joint_currents_limits[i] - 0.001;
+                else if (currentCommand[i] <= -joint_currents_limits[i])
+                    currentCommand[i] = -joint_currents_limits[i] + 0.001;
                 base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
-                base_command.mutable_actuators(i)->set_current_motor(pidOutput[i]);
+                base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
             }
 
             // Incrementing identifier ensures actuators can reject out of time frames
