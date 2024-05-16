@@ -304,6 +304,178 @@ void move_to_retract_position(k_api::Base::BaseClient *base)
     }
 }
 
+bool move_to_pref_position(k_api::Base::BaseClient *base)
+{
+    bool success = false;
+
+    auto product = base->GetProductConfiguration();
+    bool gen3LiteModelCompatible = false;
+    if (product.model() == k_api::ProductConfiguration::MODEL_ID_L53 || product.model() == k_api::ProductConfiguration::MODEL_ID_L31)
+    {
+        if (product.model() == k_api::ProductConfiguration::MODEL_ID_L31)
+        {
+            gen3LiteModelCompatible = true; // Detected a Gen3 Lite
+        }
+    }
+    else
+    {
+        std::cout << "Product is not compatible to run this example please contact support with KIN number bellow" << std::endl;
+        std::cout << "Product KIN is : " << product.kin() << std::endl;
+        return success;
+    }
+
+    // Make sure the arm is in Single Level Servoing before executing an Action
+    auto servoingMode = k_api::Base::ServoingModeInformation();
+    servoingMode.set_servoing_mode(k_api::Base::ServoingMode::SINGLE_LEVEL_SERVOING);
+    base->SetServoingMode(servoingMode);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // Create the trajectory
+    k_api::Base::WaypointList wpts = k_api::Base::WaypointList();
+
+    // Binded to degrees of movement and each degrees correspond to one degree of liberty
+    auto actuators = base->GetActuatorCount();
+    uint32_t degreesOfFreedom = actuators.count();
+
+    // Move arm with waypoints list
+    const int kmaxDegreesOfFreedom = 7;
+    auto jointPoses = std::vector<std::array<float, kmaxDegreesOfFreedom>>();
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Note : To customize this example for your needs an array of array is used containing the information needed :
+    // all  values correspond to a joint/motor
+    // If you have 6DoF the array will contain 6 positions expressed in degrees in float format.
+    // If you have 7DoF the array will contain 7 positions expressed in degrees in float format.
+    // You may overwrite the jointPose array for the proper arm
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if (gen3LiteModelCompatible == true) // Gen3 Lite
+    {
+        // jointPoses.push_back({ 0.0f,  344.0f, 75.0f,  360.0f, 300.0f, 0.0f  });  // Home
+        // jointPoses.push_back({ 0.0f,  21.0f,  145.0f, 272.0f, 32.0f,  273.0f}); // Retract
+        // jointPoses.push_back({ 42.0f, 334.0f, 79.0f,  241.0f, 305.0f, 56.0f });// Angular pick down
+        jointPoses.push_back({0.0f, 20.0f, 90.0f, 0.0f, 0.0f, 0.0f}); // Pref
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    const float firstTime = 5.0f;
+
+    for (auto index = 0; index < jointPoses.size(); ++index)
+    {
+        k_api::Base::Waypoint *wpt = wpts.add_waypoints();
+        if (wpt != nullptr)
+        {
+            wpt->set_name(std::string("waypoint_") + std::to_string(index));
+            k_api::Base::AngularWaypoint *ang = wpt->mutable_angular_waypoint();
+            if (ang != nullptr)
+            {
+                for (auto angleIndex = 0; angleIndex < degreesOfFreedom; ++angleIndex)
+                {
+                    ang->add_angles(jointPoses.at(index).at(angleIndex));
+                }
+
+                // Joints/motors 5 and 7 are slower and need more time
+                if (index == 4 || index == 6)
+                {
+                    ang->set_duration(firstTime * 6); // min 30 seconds
+                }
+                else
+                {
+                    ang->set_duration(firstTime);
+                }
+            }
+        }
+    }
+
+    // Connect to notification action topic
+    std::promise<k_api::Base::ActionEvent> finish_promise_cart;
+    auto finish_future_cart = finish_promise_cart.get_future();
+    auto promise_notification_handle_cart = base->OnNotificationActionTopic(create_event_listener_by_promise(finish_promise_cart),
+                                                                            k_api::Common::NotificationOptions());
+
+    k_api::Base::WaypointValidationReport result;
+    try
+    {
+        // Verify validity of waypoints
+        auto validationResult = base->ValidateWaypointList(wpts);
+        result = validationResult;
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Try catch error on waypoint list" << std::endl;
+        // You can print the error informations and error codes
+        auto error_info = ex.getErrorInfo().getError();
+        std::cout << "KDetailedoption detected what:  " << ex.what() << std::endl;
+
+        std::cout << "KError error_code: " << error_info.error_code() << std::endl;
+        std::cout << "KError sub_code: " << error_info.error_sub_code() << std::endl;
+        std::cout << "KError sub_string: " << error_info.error_sub_string() << std::endl;
+
+        // Error codes by themselves are not very verbose if you don't see their corresponding enum value
+        // You can use google::protobuf helpers to get the string enum element for every error code and sub-code
+        std::cout << "Error code string equivalent: " << k_api::ErrorCodes_Name(k_api::ErrorCodes(error_info.error_code())) << std::endl;
+        std::cout << "Error sub-code string equivalent: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes(error_info.error_sub_code())) << std::endl;
+        return false;
+    }
+
+    // Trajectory error report always exists and we need to make sure no elements are found in order to validate the trajectory
+    if (result.trajectory_error_report().trajectory_error_elements_size() == 0)
+    {
+        // Execute action
+        try
+        {
+            // Move arm with waypoints list
+            std::cout << "Moving the arm creating a trajectory of " << jointPoses.size() << " angular waypoints" << std::endl;
+            base->ExecuteWaypointTrajectory(wpts);
+        }
+        catch (k_api::KDetailedException &ex)
+        {
+            std::cout << "Try catch error executing normal trajectory" << std::endl;
+            // You can print the error informations and error codes
+            auto error_info = ex.getErrorInfo().getError();
+            std::cout << "KDetailedoption detected what:  " << ex.what() << std::endl;
+
+            std::cout << "KError error_code: " << error_info.error_code() << std::endl;
+            std::cout << "KError sub_code: " << error_info.error_sub_code() << std::endl;
+            std::cout << "KError sub_string: " << error_info.error_sub_string() << std::endl;
+
+            // Error codes by themselves are not very verbose if you don't see their corresponding enum value
+            // You can use google::protobuf helpers to get the string enum element for every error code and sub-code
+            std::cout << "Error code string equivalent: " << k_api::ErrorCodes_Name(k_api::ErrorCodes(error_info.error_code())) << std::endl;
+            std::cout << "Error sub-code string equivalent: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes(error_info.error_sub_code())) << std::endl;
+            return false;
+        }
+        // Wait for future value from promise
+        const auto ang_status = finish_future_cart.wait_for(std::chrono::seconds{100});
+
+        base->Unsubscribe(promise_notification_handle_cart);
+
+        if (ang_status != std::future_status::ready)
+        {
+            std::cout << "Timeout on action notification wait for angular waypoint trajectory" << std::endl;
+        }
+        else
+        {
+            const auto ang_promise_event = finish_future_cart.get();
+            std::cout << "Angular waypoint trajectory completed" << std::endl;
+            std::cout << "Promise value : " << k_api::Base::ActionEvent_Name(ang_promise_event) << std::endl;
+
+            success = true;
+
+            // We are now ready to reuse the validation output to test default trajectory generated...
+            // Here we need to understand that trajectory using angular waypoint is never optimized.
+            // In other words the waypoint list is the same and this is a limitation of Kortex API for now
+        }
+    }
+    else
+    {
+        std::cout << "Error found in trajectory" << std::endl;
+        result.trajectory_error_report().PrintDebugString();
+    }
+
+    return success;
+}
+
 std::vector<double> multiplyVectors(const std::vector<double> &vec1, const std::vector<double> &vec2)
 {
     std::vector<double> result(vec1.size());
@@ -402,6 +574,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             commands.push_back(base_feedback.actuators(i).position());
             base_command.add_actuators()->set_position(base_feedback.actuators(i).position());
         }
+
         // Send a first frame
         base_feedback = base_cyclic->Refresh(base_command);
 
@@ -706,6 +879,7 @@ int main(int argc, char **argv)
     // Example core
     bool success = true;
     success &= move_to_home_position(base);
+    success &= move_to_pref_position(base);
     success &= actuator_low_level_current_control(base, base_cyclic, actuator_config);
     if (!success)
     {
