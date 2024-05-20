@@ -22,10 +22,13 @@
 #include <Eigen/Dense>
 #include <Eigen/Core>
 
+#include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
 #include "KinovaPinocchioCasadi/casadi_kin_dyn.h"
+#include "KinovaClient/utilities.h"
 
 #include <urdf_parser/urdf_parser.h>
 
@@ -76,6 +79,7 @@ namespace casadi_kin_dyn
         std::vector<double> cartesianImpedance();
         std::vector<double> compensateFrictionInMovingDirection();
         std::vector<double> compensateFrictionInCurrentDirection();
+        std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
@@ -94,12 +98,16 @@ namespace casadi_kin_dyn
         static casadi::SX eig_to_cas(const VectorXs &eig);
         static casadi::SX eigmat_to_cas(const MatrixXs &eig);
 
+        // // custom
+        // static double calculateNorm(const std::vector<double> &vec);
+
         pinocchio::Model _model_dbl;
         casadi::SX _q, _qdot, _qddot, _tau, _current;
         std::vector<double> _q_min, _q_max;
 
         casadi::SX target_x;
 
+        std::vector<double> x_e{0.0, 0.0, 0.0};
         std::vector<double> dx_e{0.0, 0.0, 0.0};
         std::vector<double> dx_d{0.0, 0.0, 0.0};
 
@@ -114,12 +122,21 @@ namespace casadi_kin_dyn
         // std::vector<double> frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
 
         // Cartesian impedance:
+
         //  Define the scalar values
-        double Kd_scalar = 40.0;
-        double Dd_scalar = 3.0;
+        double Kd_scalar = 60.0;
+        double Dd_scalar = 5.0;
         double thr_cart_error = 0.001; // m
-        double error_cart_MAX = 0.1;  // m
-        double thr_dynamic = 0.3;      // rad/s
+        double error_cart_MAX = 0.1;   // m
+        double thr_dynamic = 0.4;      // rad/s
+
+        // Base
+        double thr_pos_error = 0.01; // m
+        double thr_rot_error = DEG_TO_RAD(10);
+        double K_pos = 4;
+        double gain_pos_MAX = 1;
+        double K_rot = 0.5;
+        double gain_rot_MAX = 0.5;
 
         // Create identity matrices and scale them
         Eigen::MatrixXd Kd = Kd_scalar * Eigen::MatrixXd::Identity(3, 3);
@@ -591,8 +608,6 @@ namespace casadi_kin_dyn
 
     std::vector<double> CasadiKinDyn::Impl::cartesianImpedance()
     {
-        std::vector<double> x_e(3, 0.0);
-
         auto model = _model_dbl.cast<Scalar>();
         pinocchio::DataTpl<Scalar> data(model);
 
@@ -858,6 +873,58 @@ namespace casadi_kin_dyn
         return result;
     }
 
+    std::vector<double> CasadiKinDyn::Impl::compensateFrictionInImpedanceMode(std::vector<double> current)
+    {
+        set_current(current);
+        
+        // Convert current to Eigen::VectorXd
+        Eigen::VectorXd current_eigen = Eigen::Map<const Eigen::VectorXd>(current.data(), current.size());
+
+        // Get compensation in moving direction
+        std::vector<double> comp_dir_mov_vec = compensateFrictionInMovingDirection();
+        Eigen::VectorXd comp_dir_mov = Eigen::Map<const Eigen::VectorXd>(comp_dir_mov_vec.data(), comp_dir_mov_vec.size());
+
+        // Get compensation in current direction
+        std::vector<double> comp_dir_cur_vec = compensateFrictionInCurrentDirection();
+        Eigen::VectorXd comp_dir_cur = Eigen::Map<const Eigen::VectorXd>(comp_dir_cur_vec.data(), comp_dir_cur_vec.size());
+
+        // Combine compensations
+        Eigen::VectorXd compensation = comp_dir_mov + comp_dir_cur;
+
+        // Decrease compensation when close to target
+        double sum = 0.0;
+        for (double val : x_e)
+        {
+            sum += val * val;
+        }
+        
+        double norm_x_e = std::sqrt(sum);
+        compensation *= std::min(norm_x_e / thr_pos_error, 1.0);
+
+        // Reduce compensation exponentially when current is very small compared to friction value
+        Eigen::VectorXd current_squared = current_eigen.array().square();
+        Eigen::ArrayXd frictions_array = Eigen::Map<const Eigen::ArrayXd>(frictions.data(), frictions.size());
+        Eigen::VectorXd friction_threshold = frictions_array * 0.001;
+        Eigen::VectorXd reduction_factor = current_squared.array() / friction_threshold.array();
+        reduction_factor = reduction_factor.cwiseMin(1.0);
+        compensation = compensation.array() * reduction_factor.array();
+
+        // Convert result back to std::vector<double>
+        std::vector<double> result(compensation.data(), compensation.data() + compensation.size());
+
+        return result;
+    }
+
+    // CasadiKinDyn::Impl::double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
+    // {
+    //     double sum = 0.0;
+    //     for (double val : vec)
+    //     {
+    //         sum += val * val;
+    //     }
+    //     return std::sqrt(sum);
+    // }
+
     // Function to convert casadi::SX to std::vector<double>
     std::vector<double> casadiSxToStdVector(const casadi::SX &sx)
     {
@@ -895,6 +962,8 @@ namespace casadi_kin_dyn
         }
         return eigenVec;
     }
+
+
 
     ///////////////////////////////////////
 
@@ -1052,6 +1121,11 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::compensateFrictionInCurrentDirection()
     {
         return impl().compensateFrictionInCurrentDirection();
+    }
+
+    std::vector<double> CasadiKinDyn::compensateFrictionInImpedanceMode(std::vector<double> current)
+    {
+        return impl().compensateFrictionInImpedanceMode(current);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////

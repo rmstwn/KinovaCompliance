@@ -48,6 +48,7 @@ namespace casadi_kin_dyn
     std::vector<double> cartesianImpedance();
     std::vector<double> compensateFrictionInMovingDirection();
     std::vector<double> compensateFrictionInCurrentDirection();
+    std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
 
     std::vector<double> q_min() const;
     std::vector<double> q_max() const;

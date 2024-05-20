@@ -514,7 +514,9 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     bool return_status = true;
 
     std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
-    std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
+    std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0);
+    std::vector<double> ComTotalFrictionDir(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
+
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
 
     // Get actuator count
@@ -615,7 +617,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 60;
+        const int TASK_TIME_LIMIT_SEC = 240;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -690,6 +692,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // std::cout << "Set vel done" << std::endl;
             ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
 
+            // Compensate friction in Velocity and Current direction
+            kin_dyn.set_current(jntCurrents);
+            ComTotalFrictionDir = kin_dyn.compensateFrictionInImpedanceMode(jntCurrents);
+
             // // Add friction compensation to the given current, when not moving.
             // kin_dyn.set_current(jntCurrents);
             // // std::cout << "Set vel done" << std::endl;
@@ -726,14 +732,14 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             for (int i = 0; i < actuator_count; i++)
             {
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
-                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComFrictionVelDir[i];
+                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i];
             }
 
-            // Apply PID control to reach the desired current
-            for (size_t i = 0; i < TorqueGravity.size(); ++i)
-            {
-                pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
-            }
+            // // Apply PID control to reach the desired current
+            // for (size_t i = 0; i < TorqueGravity.size(); ++i)
+            // {
+            //     pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
+            // }
 
             // // Perform element-wise addition manually
             // std::vector<double> resultCommand(currentCommand.size(), 0.0);
