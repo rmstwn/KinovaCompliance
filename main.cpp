@@ -23,6 +23,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 
 // Mobile base Lib
 #include "KinovaMobile/kinova_mobile.hpp"
@@ -118,6 +119,32 @@ private:
     double prev_error_;
     double integral_;
 };
+
+void saveVectorsToFile(const std::vector<double> &jntCurrents, const std::vector<double> &jntTorque, std::ofstream &outFile)
+{
+    // Check if the file is open
+    if (!outFile.is_open())
+    {
+        std::cerr << "Error: Could not open the file for writing!" << std::endl;
+        return;
+    }
+
+    // Write the contents of jntCurrents to the file
+    outFile << "jntCurrents:\n";
+    for (const auto &current : jntCurrents)
+    {
+        outFile << current << "\n";
+    }
+
+    // Write the contents of jntTorque to the file
+    outFile << "jntTorque:\n";
+    for (const auto &torque : jntTorque)
+    {
+        outFile << torque << "\n";
+    }
+
+    outFile << "--------------------------\n";
+}
 
 /*****************************
  * Example related function *
@@ -513,11 +540,15 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 {
     bool return_status = true;
 
-    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
+    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jntTorque(6), jntImpedanceTorques(6);
     std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0);
     std::vector<double> ComTotalFrictionDir(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
 
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
+
+    // Create log file
+    std::ofstream data;
+    data.open("/home/rama/Documents/cpp/KinovaCompliance/data_current_torque.csv");
 
     // Get actuator count
     unsigned int actuator_count = base->GetActuatorCount().count();
@@ -588,7 +619,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
             jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
             jntCurrents[i] = base_feedback.actuators(i).current_motor();
-            jnt_torque[i] = base_feedback.actuators(i).torque(); // nm
+            jntTorque[i] = base_feedback.actuators(i).torque(); // nm
         }
 
         // Kinova API provides only positive angle values
@@ -608,16 +639,16 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
         control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::CURRENT);
 
-        // Set to Current Mode
-        for (int actuator_id = 1; actuator_id < 6; actuator_id++)
-            actuator_config->SetControlMode(control_mode_message, actuator_id);
+        // // Set to Current Mode
+        // for (int actuator_id = 1; actuator_id < 6; actuator_id++)
+        //     actuator_config->SetControlMode(control_mode_message, actuator_id);
 
         const std::vector<double> joint_currents_limits{9.2538, 2.7666, 9.2538, 17.1666, 18.3357, 17.7516};
 
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 240;
+        const int TASK_TIME_LIMIT_SEC = 60;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -649,7 +680,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
                 jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
                 jntCurrents[i] = base_feedback.actuators(i).current_motor();
-                jnt_torque[i] = base_feedback.actuators(i).torque(); // nm
+                jntTorque[i] = base_feedback.actuators(i).torque(); // nm
             }
 
             // Kinova API provides only positive angle values
@@ -667,9 +698,25 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "Pos : " << jntPositions << std::endl;
             std::cout << "Vel : " << jntVelocities << std::endl;
             std::cout << "Current : " << jntCurrents << std::endl;
-            std::cout << "Torque : " << jnt_torque << std::endl;
+            std::cout << "Torque : " << jntTorque << std::endl;
             std::cout << "ratios : " << ratios << std::endl;
             std::cout << "frictions : " << frictions << std::endl;
+
+            // saveVectorsToFile(jntCurrents, jntTorque, outFile);
+
+            data << iterationCount << ","
+                 << (double)jntCurrents[0] << ","
+                 << (double)jntCurrents[1] << ","
+                 << (double)jntCurrents[2] << ","
+                 << (double)jntCurrents[3] << ","
+                 << (double)jntCurrents[4] << ","
+                 << (double)jntCurrents[5] << ","
+                 << (double)jntTorque[0] << ","
+                 << (double)jntTorque[1] << ","
+                 << (double)jntTorque[2] << ","
+                 << (double)jntTorque[3] << ","
+                 << (double)jntTorque[4] << ","
+                 << (double)jntTorque[5] << std::endl;
 
             // Set current pos
             kin_dyn.set_q(jntPositions);
@@ -696,38 +743,6 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             kin_dyn.set_current(jntCurrents);
             ComTotalFrictionDir = kin_dyn.compensateFrictionInImpedanceMode(jntCurrents);
 
-            // // Add friction compensation to the given current, when not moving.
-            // kin_dyn.set_current(jntCurrents);
-            // // std::cout << "Set vel done" << std::endl;
-            // ComFrictionCurDir = kin_dyn.compensateFrictionInCurrentDirection();
-
-            // // Compute desired current for Friction compensation
-            // for (int i = 0; i < actuator_count; i++)
-            // {
-            //     currentFrictionCommand[i] = ComFrictionVelDir[i] + ComFrictionCurDir[i];
-            // }
-
-            // // Compute the scaling factor
-            // std::vector<double> scaling_factor;
-            // for (size_t i = 0; i < jntCurrents.size(); ++i)
-            // {
-            //     double factor = jntCurrents[i] * jntCurrents[i] / (frictions[i] * 0.001);
-            //     scaling_factor.push_back(std::min(1.0, factor));
-            // }
-
-            // // Compute Total Friction compensation
-            // for (int i = 0; i < actuator_count; i++)
-            // {
-            //     currentFrictionCommand[i] = currentFrictionCommand[i] * scaling_factor[i];
-            // }
-
-            // // Compute Total compensation
-            // for (int i = 0; i < actuator_count; i++)
-            // {
-            //     currentCommand[i] = currentImpCommand[i];
-            //     currentCommand[i] = currentCommand[i] + currentGravityCommand[i] + ComFrictionVelDir[i];
-            // }
-
             // Compute Total compensation
             for (int i = 0; i < actuator_count; i++)
             {
@@ -739,19 +754,6 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // for (size_t i = 0; i < TorqueGravity.size(); ++i)
             // {
             //     pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
-            // }
-
-            // // Perform element-wise addition manually
-            // std::vector<double> resultCommand(currentCommand.size(), 0.0);
-
-            // for (size_t i = 0; i < currentCommand.size(); ++i)
-            // {
-            //     // Convert scalar values to vectors
-            //     std::vector<double> gravityScalar = {TorqueGravity[i]};
-            //     std::vector<double> ratiosScalar = {ratios[i]};
-
-            //     // Perform addition
-            //     resultCommand[i] = currentCommand[i] + (gravityScalar[0] * ratiosScalar[0]);
             // }
 
             std::cout << "gravity : " << TorqueGravity << std::endl;
@@ -767,24 +769,13 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // for (int i = 0; i < actuator_count; i++)
             // {
             //     // pidOutput[i] = pidOutput[i];
-            //     if (pidOutput[i] >= joint_currents_limits[i])
-            //         pidOutput[i] = joint_currents_limits[i] - 0.001;
-            //     else if (pidOutput[i] <= -joint_currents_limits[i])
-            //         pidOutput[i] = -joint_currents_limits[i] + 0.001;
+            //     if (currentCommand[i] >= joint_currents_limits[i])
+            //         currentCommand[i] = joint_currents_limits[i] - 0.001;
+            //     else if (currentCommand[i] <= -joint_currents_limits[i])
+            //         currentCommand[i] = -joint_currents_limits[i] + 0.001;
             //     base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
-            //     base_command.mutable_actuators(i)->set_current_motor(pidOutput[i]);
+            //     base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
             // }
-
-            for (int i = 0; i < actuator_count; i++)
-            {
-                // pidOutput[i] = pidOutput[i];
-                if (currentCommand[i] >= joint_currents_limits[i])
-                    currentCommand[i] = joint_currents_limits[i] - 0.001;
-                else if (currentCommand[i] <= -joint_currents_limits[i])
-                    currentCommand[i] = -joint_currents_limits[i] + 0.001;
-                base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
-                base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
-            }
 
             // Incrementing identifier ensures actuators can reject out of time frames
             base_command.set_frame_id(base_command.frame_id() + 1);
@@ -824,6 +815,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             actuator_config->SetControlMode(control_mode_message, actuator_id);
 
         std::cout << "Clean exit" << std::endl;
+
+        // save log file
+        data.close();
+        
     }
     catch (k_api::KDetailedException &ex)
     {
