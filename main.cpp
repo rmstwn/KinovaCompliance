@@ -513,7 +513,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 {
     bool return_status = true;
 
-    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jnt_torque(6), jntImpedanceTorques(6);
+    std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jntTorque(6), jntImpedanceTorques(6);
     std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0);
     std::vector<double> ComTotalFrictionDir(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
 
@@ -588,7 +588,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
             jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
             jntCurrents[i] = base_feedback.actuators(i).current_motor();
-            jnt_torque[i] = base_feedback.actuators(i).torque(); // nm
+            jntTorque[i] = base_feedback.actuators(i).torque(); // nm
         }
 
         // Kinova API provides only positive angle values
@@ -649,7 +649,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
                 jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
                 jntCurrents[i] = base_feedback.actuators(i).current_motor();
-                jnt_torque[i] = base_feedback.actuators(i).torque(); // nm
+                jntTorque[i] = base_feedback.actuators(i).torque(); // nm
             }
 
             // Kinova API provides only positive angle values
@@ -667,7 +667,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "Pos : " << jntPositions << std::endl;
             std::cout << "Vel : " << jntVelocities << std::endl;
             std::cout << "Current : " << jntCurrents << std::endl;
-            std::cout << "Torque : " << jnt_torque << std::endl;
+            std::cout << "Torque : " << jntTorque << std::endl;
             std::cout << "ratios : " << ratios << std::endl;
             std::cout << "frictions : " << frictions << std::endl;
 
