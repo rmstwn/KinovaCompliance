@@ -80,6 +80,7 @@ namespace casadi_kin_dyn
         std::vector<double> compensateFrictionInMovingDirection();
         std::vector<double> compensateFrictionInCurrentDirection();
         std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
+        std::vector<double> NullSpaceTask();
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
@@ -93,10 +94,13 @@ namespace casadi_kin_dyn
         typedef casadi::SX Scalar;
         typedef Eigen::Matrix<Scalar, -1, 1> VectorXs;
         typedef Eigen::Matrix<Scalar, -1, -1> MatrixXs;
+        typedef Eigen::Matrix<double, -1, 1> VectorXd;
 
         static VectorXs cas_to_eig(const casadi::SX &cas);
         static casadi::SX eig_to_cas(const VectorXs &eig);
         static casadi::SX eigmat_to_cas(const MatrixXs &eig);
+
+        static VectorXd vectorToEigen(const std::vector<double> &vec);
 
         // // custom
         // static double calculateNorm(const std::vector<double> &vec);
@@ -121,26 +125,33 @@ namespace casadi_kin_dyn
         // std::vector<double> ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
         // std::vector<double> frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
 
-        // Cartesian impedance:
-
-        //  Define the scalar values
+        //////  Define the scalar values
+        //// Cartesian impedance:
         double Kd_scalar = 60.0;
         double Dd_scalar = 5.0;
         double thr_cart_error = 0.001; // m
         double error_cart_MAX = 0.1;   // m
         double thr_dynamic = 0.4;      // rad/s
 
-        // Base
+        // Create identity matrices and scale them
+        Eigen::MatrixXd Kd = Kd_scalar * Eigen::MatrixXd::Identity(3, 3);
+        Eigen::MatrixXd Dd = Dd_scalar * Eigen::MatrixXd::Identity(3, 3);
+
+        //// Null space
+        double K_n_scalar = 0.125;
+        double D_n_scalar = 0.025;
+
+        // Create identity matrices and scale them
+        Eigen::MatrixXd K_n = K_n_scalar * Eigen::MatrixXd::Identity(6, 6);
+        Eigen::MatrixXd D_n = D_n_scalar * Eigen::MatrixXd::Identity(6, 6);
+
+        //// Base
         double thr_pos_error = 0.01; // m
         double thr_rot_error = DEG_TO_RAD(10);
         double K_pos = 4;
         double gain_pos_MAX = 1;
         double K_rot = 0.5;
         double gain_rot_MAX = 0.5;
-
-        // Create identity matrices and scale them
-        Eigen::MatrixXd Kd = Kd_scalar * Eigen::MatrixXd::Identity(3, 3);
-        Eigen::MatrixXd Dd = Dd_scalar * Eigen::MatrixXd::Identity(3, 3);
     };
 
     // CasadiKinDyn::Impl::Impl(urdf::ModelInterfaceSharedPtr urdf_model)
@@ -876,7 +887,7 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::Impl::compensateFrictionInImpedanceMode(std::vector<double> current)
     {
         set_current(current);
-        
+
         // Convert current to Eigen::VectorXd
         Eigen::VectorXd current_eigen = Eigen::Map<const Eigen::VectorXd>(current.data(), current.size());
 
@@ -897,7 +908,7 @@ namespace casadi_kin_dyn
         {
             sum += val * val;
         }
-        
+
         double norm_x_e = std::sqrt(sum);
         compensation *= std::min(norm_x_e / thr_pos_error, 1.0);
 
@@ -913,6 +924,88 @@ namespace casadi_kin_dyn
         std::vector<double> result(compensation.data(), compensation.data() + compensation.size());
 
         return result;
+    }
+
+    std::vector<double> CasadiKinDyn::Impl::NullSpaceTask()
+    {
+
+        auto model = _model_dbl.cast<Scalar>();
+        pinocchio::DataTpl<Scalar> data(model);
+
+        auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        Eigen::VectorXd pref(6);
+        pref << 0, 20, 90, 0, 0, 0;
+
+        // std::cout << "Here" << std::endl;
+
+        // Convert CasADi matrices to Eigen::VectorXd
+        Eigen::VectorXd qd = pref * M_PI / 180.0; // Convert to radians
+        Eigen::VectorXd q = cas_to_eig(_q).template cast<double>();
+        Eigen::VectorXd qdot = cas_to_eig(_qdot).template cast<double>();
+
+        // std::cout << "qd" << qd << std::endl;
+        // std::cout << "qdot" << qdot << std::endl;
+        // std::cout << "q" << q << std::endl;
+
+        //// Compute N
+        // Compute the Mass matrix M using Pinocchio
+        Eigen::Matrix<Scalar, -1, -1> M = pinocchio::crba(model, data, cas_to_eig(_q));
+        M.triangularView<Eigen::StrictlyLower>() = M.transpose().triangularView<Eigen::StrictlyLower>();
+
+        // Compute the Jacobian matrix J_full
+        pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
+        pinocchio::framesForwardKinematics(model, data, cas_to_eig(_q));
+        Eigen::Matrix<Scalar, 6, -1> J_full;
+        J_full.setZero(6, nv());
+        pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, J_full);
+
+        /// Convert Eigen::MatrixXd to casadi::DM
+        casadi::SX M_dm = casadi::SX(eigmat_to_cas(M));
+        casadi::SX J_full_dm = casadi::SX(eigmat_to_cas(J_full));
+        casadi::SX I = casadi::SX::eye(M_dm.size1());
+
+        // Compute Minv and Jinv using CasADi
+        casadi::SX Minv = casadi::SX::solve(M_dm, I); // Inverse of M
+        casadi::SX Jinv = Minv * J_full_dm.T() * casadi::SX::solve((J_full_dm * Minv * J_full_dm.T()), casadi::SX::eye(6));
+
+        // Compute N using CasADi
+        casadi::SX N_dm = casadi::SX::eye(6) - J_full_dm.T() * Jinv.T();
+        Eigen::Matrix<Scalar, -1, 1> N = cas_to_eig(N_dm);
+
+        // Compute torque
+        Eigen::VectorXd torque = K_n * (qd - q) - D_n * qdot;
+
+        // Convert ratios to Eigen::VectorXd for element-wise multiplication
+        Eigen::VectorXd ratios_vector = vectorToEigen(ratios);
+
+        // Compute current
+        Eigen::VectorXd current = torque.cwiseProduct(ratios_vector);
+
+        // Compute result using N matrix
+        Eigen::VectorXd N_vec = N.cast<double>();
+        // Transpose N_vec
+        Eigen::VectorXd N_vec_transposed = N_vec.transpose();
+
+        // std::cout << "N_vec: " << N_vec << std::endl;
+        // std::cout << "current: " << current << std::endl;
+
+        // Perform element-wise multiplication
+        Eigen::VectorXd result;
+        if (N_vec_transposed.size() == current.size())
+        {
+            result = N_vec_transposed.array() * current.array();
+        }
+        else
+        {
+            std::cerr << "Error: Incompatible dimensions for element-wise multiplication." << std::endl;
+        }
+
+        // std::cout << "result: " << result << std::endl;
+
+        // Convert result to std::vector<double>
+        std::vector<double> result_vec(result.data(), result.data() + result.size());
+        return result_vec;
     }
 
     // CasadiKinDyn::Impl::double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
@@ -963,7 +1056,16 @@ namespace casadi_kin_dyn
         return eigenVec;
     }
 
-
+    // Convert a std::vector to an Eigen::VectorXd
+    CasadiKinDyn::Impl::VectorXd CasadiKinDyn::Impl::vectorToEigen(const std::vector<double> &vec)
+    {
+        Eigen::VectorXd eigen_vec(vec.size());
+        for (size_t i = 0; i < vec.size(); ++i)
+        {
+            eigen_vec(i) = vec[i];
+        }
+        return eigen_vec;
+    }
 
     ///////////////////////////////////////
 
@@ -1126,6 +1228,11 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::compensateFrictionInImpedanceMode(std::vector<double> current)
     {
         return impl().compensateFrictionInImpedanceMode(current);
+    }
+
+    std::vector<double> CasadiKinDyn::NullSpaceTask()
+    {
+        return impl().NullSpaceTask();
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
