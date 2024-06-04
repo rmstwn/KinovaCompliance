@@ -694,14 +694,15 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             if (jntPositions[5] > DEG_TO_RAD(180.0))
                 jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
 
+            std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "Joint : " << actuator_count << std::endl;
-
             std::cout << "Pos : " << jntPositions << std::endl;
             std::cout << "Vel : " << jntVelocities << std::endl;
             std::cout << "Current : " << jntCurrents << std::endl;
             std::cout << "Torque : " << jntTorque << std::endl;
             std::cout << "ratios : " << ratios << std::endl;
             std::cout << "frictions : " << frictions << std::endl;
+            std::cout << "------------------------------------------------------" << std::endl;
 
             // saveVectorsToFile(jntCurrents, jntTorque, outFile);
 
@@ -737,8 +738,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             }
 
             // Add friction compensation in the direction the joint is moving.
-            // std::cout << "Set vel done" << std::endl;
-            ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
+            // // std::cout << "Set vel done" << std::endl;
+            // ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
 
             // Compensate friction in Velocity and Current direction
             kin_dyn.set_current(jntCurrents);
@@ -747,15 +748,14 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // std::cout << "Here main" << std::endl;
 
             // Null Space
-            // kin_dyn.set_q(jntPositions);
-            // kin_dyn.set_qdot(jntVelocities);
             // ComNullSpace = kin_dyn.NullSpaceTask();
 
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
             {
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
-                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] ;
+                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i];
+                // currentCommand[i] = ((currentImpCommand[i] + currentGravityCommand[i]) + ComTotalFrictionDir[i]) + ComNullSpace[i];
             }
 
             // // Apply PID control to reach the desired current
@@ -764,6 +764,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
             // }
 
+            std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "gravity : " << TorqueGravity << std::endl;
             std::cout << "currentImpCommand : " << currentImpCommand << std::endl;
             std::cout << "currentGravityCommand : " << currentGravityCommand << std::endl;
@@ -771,9 +772,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
             std::cout << "ComNullSpace : " << ComNullSpace << std::endl;
             std::cout << "currentFrictionCommand : " << currentFrictionCommand << std::endl;
-            std::cout << "-----------------------------" << std::endl;
+            std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
             std::cout << "pidOutput : " << pidOutput << std::endl;
+            std::cout << "------------------------------------------------------" << std::endl;
 
             for (int i = 0; i < actuator_count; i++)
             {

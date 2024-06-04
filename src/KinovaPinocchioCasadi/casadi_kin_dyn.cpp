@@ -36,6 +36,8 @@
 std::vector<double> ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
 std::vector<double> frictions{0.5318, 1.4776, 0.6695, 0.3013, 0.3732, 0.5923};
 
+Eigen::VectorXd pref(6);
+
 namespace casadi_kin_dyn
 {
 
@@ -138,8 +140,8 @@ namespace casadi_kin_dyn
         Eigen::MatrixXd Dd = Dd_scalar * Eigen::MatrixXd::Identity(3, 3);
 
         //// Null space
-        double K_n_scalar = 0.125;
-        double D_n_scalar = 0.025;
+        double K_n_scalar = 0.004;
+        double D_n_scalar = 0.001;
 
         // Create identity matrices and scale them
         Eigen::MatrixXd K_n = K_n_scalar * Eigen::MatrixXd::Identity(6, 6);
@@ -194,6 +196,8 @@ namespace casadi_kin_dyn
         // std::cout << "_qdot: " << _qdot << std::endl;
         // std::cout << "_qddot: " << _qddot << std::endl;
         // std::cout << "_tau: " << _tau << std::endl;
+
+        pref << 0, 20, 90, 0, 0, 0;
     }
 
     void CasadiKinDyn::Impl::set_q(const std::vector<double> &joint_positions)
@@ -773,9 +777,9 @@ namespace casadi_kin_dyn
         // std::cout << "f_vec.size() : " << f_vec.size() << " f_vec.rows() : " << f_vec.rows() << " f_vec.cols() : " << f_vec.cols() << std::endl;
         // std::cout << f_vec << std::endl;
 
-        std::cout << "target_x_vec : " << target_x_vec << std::endl;
-        std::cout << "current_x_vec : " << current_x_vec << std::endl;
-        std::cout << "error : " << error << std::endl;
+        // std::cout << "target_x_vec : " << target_x_vec << std::endl;
+        // std::cout << "current_x_vec : " << current_x_vec << std::endl;
+        // std::cout << "error : " << error << std::endl;
 
         // Eigen::Vector3d Torq = Jacob_transpose.transpose() * f_vec;
         // Eigen::Vector6d Torq = f_vec.transpose() * Jacob;
@@ -835,9 +839,9 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::Impl::compensateFrictionInCurrentDirection()
     {
         // std::cout << "_q : " << _q << std::endl;
-        std::cout << "_qdot : " << _qdot << std::endl;
+        // std::cout << "_qdot : " << _qdot << std::endl;
         // std::cout << "frictions : " << frictions << std::endl;
-        std::cout << "_current : " << _current << std::endl;
+        // std::cout << "_current : " << _current << std::endl;
 
         // Check if sizes match
         if (_qdot.size1() != frictions.size())
@@ -926,32 +930,113 @@ namespace casadi_kin_dyn
         return result;
     }
 
+    // std::vector<double> CasadiKinDyn::Impl::NullSpaceTask()
+    // {
+
+    //     auto model = _model_dbl.cast<Scalar>();
+    //     pinocchio::DataTpl<Scalar> data(model);
+
+    //     auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+    //     Eigen::VectorXd pref(6);
+    //     pref << 0, 20, 90, 0, 0, 0;
+
+    //     // std::cout << "Here" << std::endl;
+
+    //     // Convert CasADi matrices to Eigen::VectorXd
+    //     Eigen::VectorXd qd = pref * M_PI / 180.0; // Convert to radians
+    //     Eigen::VectorXd q = cas_to_eig(_q).template cast<double>();
+    //     Eigen::VectorXd qdot = cas_to_eig(_qdot).template cast<double>();
+
+    //     // std::cout << "qd" << qd << std::endl;
+    //     // std::cout << "qdot" << qdot << std::endl;
+    //     // std::cout << "q" << q << std::endl;
+
+    //     //// Compute N
+    //     // Compute the Mass matrix M using Pinocchio
+    //     Eigen::Matrix<Scalar, -1, -1> M = pinocchio::crba(model, data, cas_to_eig(_q));
+    //     M.triangularView<Eigen::StrictlyLower>() = M.transpose().triangularView<Eigen::StrictlyLower>();
+
+    //     // Compute the Jacobian matrix J_full
+    //     pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
+    //     pinocchio::framesForwardKinematics(model, data, cas_to_eig(_q));
+    //     Eigen::Matrix<Scalar, 6, -1> J_full;
+    //     J_full.setZero(6, nv());
+    //     pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, J_full);
+
+    //     /// Convert Eigen::MatrixXd to casadi::DM
+    //     casadi::SX M_dm = casadi::SX(eigmat_to_cas(M));
+    //     casadi::SX J_full_dm = casadi::SX(eigmat_to_cas(J_full));
+    //     casadi::SX I = casadi::SX::eye(M_dm.size1());
+
+    //     // Compute Minv and Jinv using CasADi
+    //     casadi::SX Minv = casadi::SX::solve(M_dm, I); // Inverse of M
+    //     casadi::SX Jinv = Minv * J_full_dm.T() * casadi::SX::solve((J_full_dm * Minv * J_full_dm.T()), casadi::SX::eye(6));
+
+    //     // Compute N using CasADi
+    //     casadi::SX N_dm = casadi::SX::eye(6) - J_full_dm.T() * Jinv.T();
+    //     Eigen::Matrix<Scalar, -1, 1> N = cas_to_eig(N_dm);
+
+    //     // Compute torque
+    //     Eigen::VectorXd torque = K_n * (qd - q) - D_n * qdot;
+
+    //     // Convert ratios to Eigen::VectorXd for element-wise multiplication
+    //     Eigen::VectorXd ratios_vector = vectorToEigen(ratios);
+
+    //     // Compute current
+    //     Eigen::VectorXd current = torque.cwiseProduct(ratios_vector);
+
+    //     // Compute result using N matrix
+    //     Eigen::VectorXd N_vec = N.cast<double>();
+    //     // Transpose N_vec
+    //     Eigen::VectorXd N_vec_transposed = N_vec.transpose();
+
+    //     // std::cout << "N_vec: " << N_vec << std::endl;
+    //     // std::cout << "current: " << current << std::endl;
+
+    //     // Perform element-wise multiplication
+    //     Eigen::VectorXd result;
+    //     if (N_vec_transposed.size() == current.size())
+    //     {
+    //         result = N_vec_transposed.array() * current.array();
+    //     }
+    //     else
+    //     {
+    //         std::cerr << "Error: Incompatible dimensions for element-wise multiplication." << std::endl;
+    //     }
+
+    //     // std::cout << "result: " << result << std::endl;
+
+    //     // Convert result to std::vector<double>
+    //     std::vector<double> result_vec(result.data(), result.data() + result.size());
+    //     return result_vec;
+    // }
+
     std::vector<double> CasadiKinDyn::Impl::NullSpaceTask()
     {
-
         auto model = _model_dbl.cast<Scalar>();
         pinocchio::DataTpl<Scalar> data(model);
 
         auto frame_idx = model.getFrameId("END_EFFECTOR");
 
-        Eigen::VectorXd pref(6);
-        pref << 0, 20, 90, 0, 0, 0;
+        // std::cout << "Pref:" << pref << std::endl;
 
-        // std::cout << "Here" << std::endl;
-
-        // Convert CasADi matrices to Eigen::VectorXd
-        Eigen::VectorXd qd = pref * M_PI / 180.0; // Convert to radians
-        Eigen::VectorXd q = cas_to_eig(_q).template cast<double>();
-        Eigen::VectorXd qdot = cas_to_eig(_qdot).template cast<double>();
-
-        // std::cout << "qd" << qd << std::endl;
-        // std::cout << "qdot" << qdot << std::endl;
-        // std::cout << "q" << q << std::endl;
-
-        //// Compute N
+        /////////////// Compute N /////////////////
         // Compute the Mass matrix M using Pinocchio
         Eigen::Matrix<Scalar, -1, -1> M = pinocchio::crba(model, data, cas_to_eig(_q));
         M.triangularView<Eigen::StrictlyLower>() = M.transpose().triangularView<Eigen::StrictlyLower>();
+        // std::cout << "M:\n"
+        //           << M << std::endl;
+
+        // Convert M into SX
+        casadi::SX M_sx = eigmat_to_cas(M);
+        // std::cout << "M_sx:\n"
+        //           << M_sx << std::endl;
+
+        // Compute Minv using CasADi
+        casadi::SX Minv = casadi::SX::solve(M_sx, casadi::SX::eye(M_sx.size1())); // Inverse of M
+        // std::cout << "Minv:\n"
+        //           << Minv << std::endl;
 
         // Compute the Jacobian matrix J_full
         pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
@@ -959,53 +1044,99 @@ namespace casadi_kin_dyn
         Eigen::Matrix<Scalar, 6, -1> J_full;
         J_full.setZero(6, nv());
         pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, J_full);
+        // std::cout << "J_full:\n"
+        //           << J_full << std::endl;
 
-        /// Convert Eigen::MatrixXd to casadi::DM
-        casadi::SX M_dm = casadi::SX(eigmat_to_cas(M));
-        casadi::SX J_full_dm = casadi::SX(eigmat_to_cas(J_full));
-        casadi::SX I = casadi::SX::eye(M_dm.size1());
+        Eigen::Matrix<Scalar, 3, Eigen::Dynamic> J;
+        J.resize(3, nv());
+        J.setZero();
 
-        // Compute Minv and Jinv using CasADi
-        casadi::SX Minv = casadi::SX::solve(M_dm, I); // Inverse of M
-        casadi::SX Jinv = Minv * J_full_dm.T() * casadi::SX::solve((J_full_dm * Minv * J_full_dm.T()), casadi::SX::eye(6));
+        // Assuming J_full is properly initialized
+        J = J_full.topRows<3>();
+        // std::cout << "J:\n"
+        //           << J << std::endl;
+        // std::cout << "J :" << J.size() << std::endl;
 
-        // Compute N using CasADi
-        casadi::SX N_dm = casadi::SX::eye(6) - J_full_dm.T() * Jinv.T();
-        Eigen::Matrix<Scalar, -1, 1> N = cas_to_eig(N_dm);
+        casadi::SX J_sx = eigmat_to_cas(J);
+        // std::cout << "J_sx:\n"
+        //           << J_sx << std::endl;
+        // std::cout << "J_sx size :" << J_sx.size() << std::endl;
 
-        // Compute torque
+        casadi::SX J_transpose = J_sx.T();
+        // std::cout << "J_transpose:\n"
+        //           << J_transpose << std::endl;
+        // std::cout << "J_transpose size :" << J_transpose.size() << std::endl;
+
+        // casadi::SX Jinv = Minv * J_transpose * casadi::SX::solve((J_sx * Minv * J_transpose), casadi::SX::eye(3));
+        // casadi::SX Jinv(6, 3);
+        // Jinv = Minv * J_transpose;
+        casadi::SX Minv_JT = casadi::SX::mtimes(Minv, J_transpose);
+        // std::cout << "Minv_JT:\n"
+        //           << Minv_JT << std::endl;
+        // std::cout << "Minv_JT size :" << Minv_JT.size() << std::endl;
+
+        casadi::SX Jsx_MinvJT = casadi::SX::mtimes(J_sx, Minv_JT);
+        // std::cout << "Jsx_MinvJT:\n"
+        //           << Jsx_MinvJT << std::endl;
+        // std::cout << "Jsx_MinvJT size :" << Jsx_MinvJT.size() << std::endl;
+
+        casadi::SX Jinv = casadi::SX::mtimes(Minv_JT, casadi::SX::solve(Jsx_MinvJT, casadi::SX::eye(3)));
+        // std::cout << "Jinv:\n"
+        //           << Jinv << std::endl;
+        // std::cout << "Jinv size :" << Jinv.size() << std::endl;
+
+        casadi::SX N = casadi::SX::eye(6) - casadi::SX::mtimes(J_transpose, Jinv.T());
+        // std::cout << "N:\n"
+        //           << N << std::endl;
+        // std::cout << "N size :" << N.size() << std::endl;
+
+        // Convert CasADi matrices to Eigen::VectorXd
+        Eigen::VectorXd qd = pref * M_PI / 180.0; // Convert to radians
+        Eigen::VectorXd q = cas_to_eig(_q).template cast<double>();
+        Eigen::VectorXd qdot = cas_to_eig(_qdot).template cast<double>();
+
+        // Calculate Null space stiffness and damping
         Eigen::VectorXd torque = K_n * (qd - q) - D_n * qdot;
 
-        // Convert ratios to Eigen::VectorXd for element-wise multiplication
+        // std::cout << "torque:\n"
+        //           << torque << std::endl;
+        // std::cout << "torque size :" << torque.size() << std::endl;
+
         Eigen::VectorXd ratios_vector = vectorToEigen(ratios);
-
-        // Compute current
         Eigen::VectorXd current = torque.cwiseProduct(ratios_vector);
+        // std::cout << "current:\n"
+        //           << current << std::endl;
+        // std::cout << "current size :" << current.size() << std::endl;
 
-        // Compute result using N matrix
-        Eigen::VectorXd N_vec = N.cast<double>();
-        // Transpose N_vec
-        Eigen::VectorXd N_vec_transposed = N_vec.transpose();
-
-        // std::cout << "N_vec: " << N_vec << std::endl;
-        // std::cout << "current: " << current << std::endl;
-
-        // Perform element-wise multiplication
-        Eigen::VectorXd result;
-        if (N_vec_transposed.size() == current.size())
+        // Convert Eigen VectorXd to CasADi SX vector
+        casadi::SX current_sx = casadi::SX::zeros(current.size(), 1); // Create SX matrix with single column
+        for (int i = 0; i < current.size(); ++i)
         {
-            result = N_vec_transposed.array() * current.array();
+            current_sx(i, 0) = current(i); // Assign Eigen vector's values to SX vector
         }
-        else
-        {
-            std::cerr << "Error: Incompatible dimensions for element-wise multiplication." << std::endl;
-        }
+        // std::cout << "current_sx:\n"
+        //           << current_sx << std::endl;
+        // std::cout << "current_sx size :" << current_sx.size() << std::endl;
 
-        // std::cout << "result: " << result << std::endl;
+        casadi::SX result_sx = casadi::SX::mtimes(N, current_sx);
+        // std::cout << "result_sx:\n"
+        //           << result_sx << std::endl;
+        // std::cout << "result_sx size :" << result_sx.size() << std::endl;
 
-        // Convert result to std::vector<double>
-        std::vector<double> result_vec(result.data(), result.data() + result.size());
-        return result_vec;
+        Eigen::VectorXd result_eig = cas_to_eig(result_sx).template cast<double>();
+        // std::cout << "result_eig:\n"
+        //           << result_eig << std::endl;
+        // std::cout << "result_eig size :" << result_eig.size() << std::endl;
+
+        ///////////////////////////////////////////
+
+        std::vector<double> result(result_eig.data(), result_eig.data() + result_eig.size());
+        // std::cout << "result:\n"
+        //           << result << std::endl;
+        // std::cout << "result size :" << result.size() << std::endl;
+
+
+        return result;
     }
 
     // CasadiKinDyn::Impl::double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
