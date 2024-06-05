@@ -2,7 +2,7 @@
 #define KINOVA_MOBILE_CONTROLLER_HPP
 
 // #include <string>
-#include <vector>  // Include for std::vector
+#include <vector> // Include for std::vector
 // #include <cstdint> // Include for uint8_t
 // #include <CppLinuxSerial/SerialPort.hpp>
 
@@ -77,7 +77,15 @@ namespace KinovaMobile
         static constexpr uint8_t COMMAND_POSE_X = 0x05;
         static constexpr uint8_t COMMAND_POSE_Y = 0x06;
         static constexpr uint8_t COMMAND_POSE_THETA = 0x07;
+
+        static constexpr uint8_t COMMAND_VELOCITY_X = 0x2A;
+        static constexpr uint8_t COMMAND_VELOCITY_Y = 0x3A;
+        static constexpr uint8_t COMMAND_VELOCITY_THETA = 0x4A;
+
         static constexpr uint8_t COMMAND_RESET_ODOMETRY = 0x015;
+
+        static constexpr uint8_t COMMAND_STOP = 0xFF;
+
         static constexpr uint8_t REPLY_ROBOT_STATE = 0x03;
         static constexpr uint8_t REPLY_MOVE = 0x04;
         static constexpr uint8_t REPLY_COMMAND_X = 0x05;
@@ -87,6 +95,7 @@ namespace KinovaMobile
         static constexpr uint8_t REPLY_STATE_Y = 0x012;
         static constexpr uint8_t REPLY_STATE_THETA = 0x13;
         static constexpr uint8_t REPLY_RESET_ODOMETRY = 0x15;
+
         static constexpr uint8_t DEBUG_CONSOLE = 0x20;
     };
 
@@ -120,6 +129,8 @@ namespace KinovaMobile
         // Member functions
         void ReceiveData();
         void SendRefPose(float x, float y, float theta);
+        void SendRefVelocities(float x, float y, float theta);
+
         bool IsCommandPoseCorrect(float x, float y, float theta);
         void Move();
         void ResetOdometry();

@@ -261,6 +261,52 @@ namespace KinovaMobile
         KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
     }
 
+    void KinovaMobileController::SendRefVelocities(float x, float y, float theta)
+    {
+        // Encode float values into integers
+        int xEncoded = KinovaMobileProtocol::EncodeFloat2Int(x);
+        int yEncoded = KinovaMobileProtocol::EncodeFloat2Int(y);
+        int thetaEncoded = KinovaMobileProtocol::EncodeFloat2Int(theta);
+
+        // Create packet data
+        KinovaMobileProtocol::KinovaMobileData dataPacket;
+
+        // // Send x-coordinate command
+        // dataPacket.data = xEncoded;
+        // dataPacket.reg = KinovaMobileProtocol::COMMAND_POSE_X;
+        // dataPacket.valid = true;
+        // KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+
+        // // Send y-coordinate command
+        // dataPacket.data = yEncoded;
+        // dataPacket.reg = KinovaMobileProtocol::COMMAND_POSE_Y;
+        // KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+
+        // // Send theta command
+        // dataPacket.data = thetaEncoded;
+        // dataPacket.reg = KinovaMobileProtocol::COMMAND_POSE_THETA;
+        // KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+
+        // Send x-coordinate command
+        dataPacket.data = xEncoded;
+        dataPacket.reg = KinovaMobileProtocol::COMMAND_VELOCITY_X;
+        dataPacket.valid = true;
+        std::cout << "Vel X packet: data=" << dataPacket.data << ", reg=" << static_cast<int>(dataPacket.reg) << ", valid=" << dataPacket.valid << std::endl;
+        KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+
+        // Send y-coordinate command
+        dataPacket.data = yEncoded;
+        dataPacket.reg = KinovaMobileProtocol::COMMAND_VELOCITY_Y;
+        std::cout << "Vel Y packet: data=" << dataPacket.data << ", reg=" << static_cast<int>(dataPacket.reg) << ", valid=" << dataPacket.valid << std::endl;
+        KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+
+        // Send theta command
+        dataPacket.data = thetaEncoded;
+        dataPacket.reg = KinovaMobileProtocol::COMMAND_VELOCITY_THETA;
+        std::cout << "Vel Theta packet: data=" << dataPacket.data << ", reg=" << static_cast<int>(dataPacket.reg) << ", valid=" << dataPacket.valid << std::endl;
+        KinovaMobileProtocol::SendPacketData(myInterface, dataPacket);
+    }
+
     bool KinovaMobileController::IsCommandPoseCorrect(float x, float y, float theta)
     {
         bool correct = true;
@@ -306,9 +352,10 @@ namespace KinovaMobile
     void KinovaMobileController::Stop()
     {
         KinovaMobileProtocol::KinovaMobileData data_t;
-        data_t.data = 0;
-        data_t.reg = KinovaMobileProtocol::COMMAND_MOVE;
+        data_t.data = 1;
+        data_t.reg = KinovaMobileProtocol::COMMAND_STOP;
         data_t.valid = true;
+        std::cout << "Stop packet: data=" << data_t.data << ", reg=" << static_cast<int>(data_t.reg) << ", valid=" << data_t.valid << std::endl;
         KinovaMobileProtocol::SendPacketData(myInterface, data_t);
     }
 
