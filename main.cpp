@@ -540,16 +540,26 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 {
     bool return_status = true;
 
+    // Kinova var
     std::vector<double> jntCmdTorques(6), jntPositions(6), jntVelocities(6), jntCurrents(6), jntTorque(6), jntImpedanceTorques(6);
     std::vector<double> TorqueGravity(6, 0.0), currentCommand(6, 0.0), currentGravityCommand(6, 0.0), currentFrictionCommand(6, 0.0);
     std::vector<double> ComTotalFrictionDir(6, 0.0), ComFrictionVelDir(6, 0.0), ComFrictionCurDir(6, 0.0), currentImpCommand(6, 0.0);
     std::vector<double> ComNullSpace(6, 0.0);
+
+    // Base var
+    std::vector<double> BaseCommand(3, 0.0);
 
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
 
     // Create log file
     std::ofstream data;
     data.open("/home/rama/Documents/cpp/KinovaCompliance/data_current_torque.csv");
+
+    // Create Mobile Base Serial
+    std::string portName = "/dev/ttyACM0"; // Example port name
+    speed_t baudRate = B115200;            // Example baud rate
+    // Create an instance of KinovaMobileSerial
+    KinovaMobile::KinovaMobileController mobile(portName);
 
     // Get actuator count
     unsigned int actuator_count = base->GetActuatorCount().count();
@@ -764,6 +774,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
             // }
 
+            // Mobile base
+
+            BaseCommand = kin_dyn.CommandBase();
+
             std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "gravity : " << TorqueGravity << std::endl;
             std::cout << "currentImpCommand : " << currentImpCommand << std::endl;
@@ -772,6 +786,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
             std::cout << "ComNullSpace : " << ComNullSpace << std::endl;
             std::cout << "currentFrictionCommand : " << currentFrictionCommand << std::endl;
+            std::cout << "BaseCommand : " << BaseCommand << std::endl;
             std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
             std::cout << "pidOutput : " << pidOutput << std::endl;
@@ -787,6 +802,11 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
                 base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
             }
+
+            // Base command send
+            mobile.Move();
+            mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
             // Incrementing identifier ensures actuators can reject out of time frames
             base_command.set_frame_id(base_command.frame_id() + 1);
@@ -853,149 +873,150 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
 int main(int argc, char **argv)
 {
-    // Create Mobile Base Serial
-    std::string portName = "/dev/ttyACM0"; // Example port name
-    speed_t baudRate = B115200;            // Example baud rate
-    // Create an instance of KinovaMobileSerial
-    KinovaMobile::KinovaMobileController mobile(portName);
+    // // Create Mobile Base Serial
+    // std::string portName = "/dev/ttyACM0"; // Example port name
+    // speed_t baudRate = B115200;            // Example baud rate
+    // // Create an instance of KinovaMobileSerial
+    // KinovaMobile::KinovaMobileController mobile(portName);
 
-    // mobile.SendRefPose(0, 0, 0);
-    // mobile.Move();
-    // mobile.Stop();
-    // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    // // mobile.SendRefPose(0, 0, 0);
+    // // mobile.Move();
+    // // mobile.Stop();
+    // // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
-    while (1)
-    {
-        // mobile.Move();
-        // mobile.SendRefVelocities(0.1, 0, 0);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        // mobile.Stop();
+    // const std::string urdf_filename = PINOCCHIO_MODEL_DIR + std::string("/GEN3-LITE_custom.urdf");
+    // casadi_kin_dyn::CasadiKinDyn kin_dyn(urdf_filename);
 
-        // mobile.Move();
-        // mobile.SendRefVelocities(1, 0, 0);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        // mobile.Stop();
+    // std::vector<double> command = kin_dyn.CommandBase();
 
-        // mobile.Move();
-        // mobile.SendRefVelocities(0, 0, 0);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        // mobile.Stop();
-
-        // for (float i = 0.1; i <= 1.0; i += 0.1) // Increment by 0.1
-        // {
-        //     mobile.Move();
-        //     mobile.SendRefVelocities(i, 0, 0);
-        //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        //     // mobile.Stop();
-        // }
-
-        for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
-        {
-            mobile.Move();
-            mobile.SendRefVelocities(i, 0, 0);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            // mobile.Stop();
-        }
-
-        for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
-        {
-            mobile.Move();
-            mobile.SendRefVelocities(i, 0, 0);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            // mobile.Stop();
-        }
-
-        for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
-        {
-            mobile.Move();
-            mobile.SendRefVelocities(0, 0, i);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            // mobile.Stop();
-        }
-
-        for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
-        {
-            mobile.Move();
-            mobile.SendRefVelocities(0, 0, i);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            // mobile.Stop();
-        }
-    }
-
-    mobile.Stop();
-    mobile.CloseInterface();
-
-    // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    // mobile.Stop();
-    // mobile.SendRefVelocities(1, 0, 0);
-
-    // // Kinova
-    // auto parsed_args = ParseExampleArguments(argc, argv);
-
-    // // Create API objects
-    // auto error_callback = [](k_api::KError err)
-    // { cout << "_________ callback error _________" << err.toString(); };
-
-    // auto transport = new k_api::TransportClientTcp();
-    // auto router = new k_api::RouterClient(transport, error_callback);
-    // transport->connect(parsed_args.ip_address, PORT);
-
-    // auto transport_real_time = new k_api::TransportClientUdp();
-    // auto router_real_time = new k_api::RouterClient(transport_real_time, error_callback);
-    // transport_real_time->connect(parsed_args.ip_address, PORT_REAL_TIME);
-
-    // // Set session data connection information
-    // auto create_session_info = k_api::Session::CreateSessionInfo();
-    // create_session_info.set_username(parsed_args.username);
-    // create_session_info.set_password(parsed_args.password);
-    // create_session_info.set_session_inactivity_timeout(60000);   // (milliseconds)
-    // create_session_info.set_connection_inactivity_timeout(2000); // (milliseconds)
-
-    // // Session manager service wrapper
-    // std::cout << "Creating sessions for communication" << std::endl;
-    // auto session_manager = new k_api::SessionManager(router);
-    // session_manager->CreateSession(create_session_info);
-    // auto session_manager_real_time = new k_api::SessionManager(router_real_time);
-    // session_manager_real_time->CreateSession(create_session_info);
-    // std::cout << "Sessions created" << std::endl;
-
-    // // Create services
-    // auto base = new k_api::Base::BaseClient(router);
-    // auto base_cyclic = new k_api::BaseCyclic::BaseCyclicClient(router_real_time);
-    // auto actuator_config = new k_api::ActuatorConfig::ActuatorConfigClient(router);
-
-    // // Example core
-    // bool success = true;
-    // success &= move_to_home_position(base);
-    // success &= move_to_pref_position(base);
-    // success &= actuator_low_level_current_control(base, base_cyclic, actuator_config);
-    // if (!success)
+    // while (1)
     // {
-    //     std::cout << "There has been an unexpected error." << endl;
+    //     // mobile.Move();
+    //     // mobile.SendRefVelocities(0.1, 0, 0);
+    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    //     // mobile.Stop();
+
+    //     // mobile.Move();
+    //     // mobile.SendRefVelocities(1, 0, 0);
+    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    //     // mobile.Stop();
+
+    //     // mobile.Move();
+    //     // mobile.SendRefVelocities(0, 0, 0);
+    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    //     // mobile.Stop();
+
+    //     // for (float i = 0.1; i <= 1.0; i += 0.1) // Increment by 0.1
+    //     // {
+    //     //     mobile.Move();
+    //     //     mobile.SendRefVelocities(i, 0, 0);
+    //     //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    //     //     // mobile.Stop();
+    //     // }
+
+    //     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
+    //     {
+    //         mobile.Move();
+    //         mobile.SendRefVelocities(i, 0, 0);
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    //         // mobile.Stop();
+    //     }
+
+    //     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
+    //     {
+    //         mobile.Move();
+    //         mobile.SendRefVelocities(i, 0, 0);
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    //         // mobile.Stop();
+    //     }
+
+    //     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
+    //     {
+    //         mobile.Move();
+    //         mobile.SendRefVelocities(0, 0, i);
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    //         // mobile.Stop();
+    //     }
+
+    //     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
+    //     {
+    //         mobile.Move();
+    //         mobile.SendRefVelocities(0, 0, i);
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    //         // mobile.Stop();
+    //     }
     // }
 
-    // // Close API session
-    // session_manager->CloseSession();
-    // session_manager_real_time->CloseSession();
+    // mobile.Stop();
+    // mobile.CloseInterface();
 
-    // // Deactivate the router and cleanly disconnect from the transport object
-    // router->SetActivationStatus(false);
-    // transport->disconnect();
-    // router_real_time->SetActivationStatus(false);
-    // transport_real_time->disconnect();
+    // return 0;
 
-    // // Destroy the API
-    // delete base;
-    // delete base_cyclic;
-    // delete actuator_config;
-    // delete session_manager;
-    // delete session_manager_real_time;
-    // delete router;
-    // delete router_real_time;
-    // delete transport;
-    // delete transport_real_time;
+    // Kinova
+    auto parsed_args = ParseExampleArguments(argc, argv);
 
-    // return success ? 0 : 1;
+    // Create API objects
+    auto error_callback = [](k_api::KError err)
+    { cout << "_________ callback error _________" << err.toString(); };
 
-    return 0;
+    auto transport = new k_api::TransportClientTcp();
+    auto router = new k_api::RouterClient(transport, error_callback);
+    transport->connect(parsed_args.ip_address, PORT);
+
+    auto transport_real_time = new k_api::TransportClientUdp();
+    auto router_real_time = new k_api::RouterClient(transport_real_time, error_callback);
+    transport_real_time->connect(parsed_args.ip_address, PORT_REAL_TIME);
+
+    // Set session data connection information
+    auto create_session_info = k_api::Session::CreateSessionInfo();
+    create_session_info.set_username(parsed_args.username);
+    create_session_info.set_password(parsed_args.password);
+    create_session_info.set_session_inactivity_timeout(60000);   // (milliseconds)
+    create_session_info.set_connection_inactivity_timeout(2000); // (milliseconds)
+
+    // Session manager service wrapper
+    std::cout << "Creating sessions for communication" << std::endl;
+    auto session_manager = new k_api::SessionManager(router);
+    session_manager->CreateSession(create_session_info);
+    auto session_manager_real_time = new k_api::SessionManager(router_real_time);
+    session_manager_real_time->CreateSession(create_session_info);
+    std::cout << "Sessions created" << std::endl;
+
+    // Create services
+    auto base = new k_api::Base::BaseClient(router);
+    auto base_cyclic = new k_api::BaseCyclic::BaseCyclicClient(router_real_time);
+    auto actuator_config = new k_api::ActuatorConfig::ActuatorConfigClient(router);
+
+    // Example core
+    bool success = true;
+    success &= move_to_home_position(base);
+    success &= move_to_pref_position(base);
+    success &= actuator_low_level_current_control(base, base_cyclic, actuator_config);
+    if (!success)
+    {
+        std::cout << "There has been an unexpected error." << endl;
+    }
+
+    // Close API session
+    session_manager->CloseSession();
+    session_manager_real_time->CloseSession();
+
+    // Deactivate the router and cleanly disconnect from the transport object
+    router->SetActivationStatus(false);
+    transport->disconnect();
+    router_real_time->SetActivationStatus(false);
+    transport_real_time->disconnect();
+
+    // Destroy the API
+    delete base;
+    delete base_cyclic;
+    delete actuator_config;
+    delete session_manager;
+    delete session_manager_real_time;
+    delete router;
+    delete router_real_time;
+    delete transport;
+    delete transport_real_time;
+
+    return success ? 0 : 1;
 }

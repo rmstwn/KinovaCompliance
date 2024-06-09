@@ -50,7 +50,10 @@ namespace casadi_kin_dyn
     std::vector<double> compensateFrictionInCurrentDirection();
     std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
     std::vector<double> NullSpaceTask();
-
+    std::vector<double> CommandBase();
+    std::vector<double> CommandBaseDirection();
+    std::vector<double> CommandBaseRotation();
+      
     std::vector<double> q_min() const;
     std::vector<double> q_max() const;
     std::vector<std::string> joint_names() const;

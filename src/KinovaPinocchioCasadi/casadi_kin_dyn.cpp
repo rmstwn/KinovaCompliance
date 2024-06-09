@@ -83,6 +83,9 @@ namespace casadi_kin_dyn
         std::vector<double> compensateFrictionInCurrentDirection();
         std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
         std::vector<double> NullSpaceTask();
+        std::vector<double> CommandBase();
+        std::vector<double> CommandBaseDirection();
+        std::vector<double> CommandBaseRotation();
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
@@ -118,6 +121,9 @@ namespace casadi_kin_dyn
         std::vector<double> dx_d{0.0, 0.0, 0.0};
 
         Eigen::Vector3d dx;
+
+        // Base
+        std::vector<double> base_vel{0.0, 0.0, 0.0, 0.0};
 
         // Robot Properties
         // Eigen::VectorXd ratios{1.0282, 0.3074, 1.0282, 1.9074, 2.0373, 1.9724};
@@ -1135,8 +1141,75 @@ namespace casadi_kin_dyn
         //           << result << std::endl;
         // std::cout << "result size :" << result.size() << std::endl;
 
-
         return result;
+    }
+
+    std::vector<double> CasadiKinDyn::Impl::CommandBase()
+    {
+        std::fill(base_vel.begin(), base_vel.end(), 0.0);
+
+        auto model = _model_dbl.cast<Scalar>();
+        pinocchio::DataTpl<Scalar> data(model);
+
+        auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        // Position:
+        std::vector<double> target_x_vec;
+        // Iterate over each element of the SX object
+        for (int i = 0; i < target_x.size1(); ++i)
+        {
+            for (int j = 0; j < target_x.size2(); ++j)
+            {
+                // Extract numerical value and append to the vector
+                target_x_vec.push_back(casadi::DM(target_x(i, j)).scalar());
+            }
+        }
+
+        auto x = data.oMf.at(frame_idx).translation();
+        auto current_x = eig_to_cas(x);
+
+        std::vector<double> current_x_vec;
+        // Iterate over each element of the SX object
+        for (int i = 0; i < current_x.size1(); ++i)
+        {
+            for (int j = 0; j < current_x.size2(); ++j)
+            {
+                // Extract numerical value and append to the vector
+                current_x_vec.push_back(casadi::DM(current_x(i, j)).scalar());
+            }
+        }
+
+        std::vector<double> command(3, 0.0);
+
+        std::vector<double> error(target_x_vec.size() - 1);
+        for (size_t i = 0; i < error.size(); ++i)
+        {
+            error[i] = current_x_vec[i] - target_x_vec[i];
+        }
+        double magnitude = std::sqrt(std::inner_product(error.begin(), error.end(), error.begin(), 0.0));
+        if (magnitude > thr_pos_error)
+        {
+            std::vector<double> direction(error.size());
+            for (size_t i = 0; i < direction.size(); ++i)
+            {
+                direction[i] = error[i] / magnitude;
+            }
+            double gain = std::min(magnitude * K_pos, gain_pos_MAX);
+            command[0] = -direction[1] * gain;
+            command[1] = direction[0] * gain;
+        }
+
+        // Rotation:
+        double rot_error = -static_cast<double>(casadi::DM(_q(0, 0)).scalar());
+        double rot_magnitude = std::abs(rot_error);
+        if (rot_magnitude > thr_rot_error)
+        {
+            double rotation = rot_error;
+            double gain = std::min(rot_magnitude * K_rot, gain_rot_MAX);
+            command[2] = rot_error * gain;
+        }
+
+        return command;
     }
 
     // CasadiKinDyn::Impl::double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
@@ -1364,6 +1437,11 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::NullSpaceTask()
     {
         return impl().NullSpaceTask();
+    }
+
+    std::vector<double> CasadiKinDyn::CommandBase()
+    {
+        return impl().CommandBase();
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
