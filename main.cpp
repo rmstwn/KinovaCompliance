@@ -40,6 +40,7 @@
 #include <TransportClientTcp.h>
 #include <TransportClientUdp.h>
 #include "KinovaClient/utilities.h"
+#include "KinovaClient/specifications.hpp"
 
 // Pinocchio Casadi Lib
 #include "pinocchio/parsers/urdf.hpp"
@@ -76,8 +77,8 @@ namespace sc = std::chrono;
 
 #define DURATION 60 // Network timeout (seconds)
 
-float velocity = 20.0f;         // Default velocity of the actuator (degrees per seconds)
-float time_duration = DURATION; // Duration of the example (seconds)
+// float velocity = 20.0f;         // Default velocity of the actuator (degrees per seconds)
+// float time_duration = DURATION; // Duration of the example (seconds)
 
 // Maximum allowed waiting time during actions
 constexpr auto TIMEOUT_PROMISE_DURATION = std::chrono::seconds{20};
@@ -525,15 +526,6 @@ std::vector<double> &operator+=(std::vector<double> &lhs, const std::vector<doub
     return lhs;
 }
 
-// Define the position and ranges map
-std::unordered_map<int, std::pair<int, int>> positionRanges = {
-    {0, {-159, 159}},
-    {1, {-159, 159}},
-    {2, {-159, 159}},
-    {3, {-154, 154}},
-    {4, {-154, 154}},
-    {5, {-154, 154}}};
-
 // std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
 
 bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::BaseCyclic::BaseCyclicClient *base_cyclic, k_api::ActuatorConfig::ActuatorConfigClient *actuator_config)
@@ -551,15 +543,17 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
     std::vector<double> pidOutput(TorqueGravity.size()); // Vector to store PID controller output
 
+    // Joint Specs
+
     // Create log file
     std::ofstream data;
     data.open("/home/rama/Documents/cpp/KinovaCompliance/data_current_torque.csv");
 
-    // Create Mobile Base Serial
-    std::string portName = "/dev/ttyACM0"; // Example port name
-    speed_t baudRate = B115200;            // Example baud rate
-    // Create an instance of KinovaMobileSerial
-    KinovaMobile::KinovaMobileController mobile(portName);
+    // // Create Mobile Base Serial
+    // std::string portName = "/dev/ttyACM0"; // Example port name
+    // speed_t baudRate = B115200;            // Example baud rate
+    // // Create an instance of KinovaMobileSerial
+    // KinovaMobile::KinovaMobileController mobile(portName);
 
     // Get actuator count
     unsigned int actuator_count = base->GetActuatorCount().count();
@@ -627,21 +621,39 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
         for (int i = 0; i < actuator_count; i++)
         {
-            jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
+            jntPositions[i] = base_feedback.actuators(i).position();              // deg
             jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
             jntCurrents[i] = base_feedback.actuators(i).current_motor();
             jntTorque[i] = base_feedback.actuators(i).torque(); // nm
         }
-
         // Kinova API provides only positive angle values
         // This operation is required to align the logic with our safety monitor
         // We need to convert some angles to negative values
-        if (jntPositions[1] > DEG_TO_RAD(180.0))
-            jntPositions[1] = jntPositions[1] - DEG_TO_RAD(360.0);
-        if (jntPositions[3] > DEG_TO_RAD(180.0))
-            jntPositions[3] = jntPositions[3] - DEG_TO_RAD(360.0);
-        if (jntPositions[5] > DEG_TO_RAD(180.0))
-            jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
+        // if (jntPositions[1] > DEG_TO_RAD(180.0))
+        //     jntPositions[1] = jntPositions[1] - DEG_TO_RAD(360.0);
+        // if (jntPositions[3] > DEG_TO_RAD(180.0))
+        //     jntPositions[3] = jntPositions[3] - DEG_TO_RAD(360.0);
+        // if (jntPositions[5] > DEG_TO_RAD(180.0))
+        //     jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
+
+        // std::cout << "Before Pos : " << jntPositions << std::endl;
+        // Adjust a position
+
+        // Create Position instances
+        std::vector<Position> positions;
+        for (const auto &[key, value] : position)
+        {
+            positions.emplace_back("Joint" + std::to_string(key), value);
+        }
+
+        for (int i = 0; i < actuator_count; i++)
+        {
+            adjustPosition(i, jntPositions[i]);
+            jntPositions[i] = DEG_TO_RAD(jntPositions[i]);
+        }
+
+        // std::cout << "After Pos : " << jntPositions << std::endl;
+        // return true;
 
         kin_dyn.set_q(jntPositions); // Set the joint positions
         kin_dyn.set_targetx();
@@ -659,7 +671,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 30;
+        const int TASK_TIME_LIMIT_SEC = 10;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -678,17 +690,17 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             loopStartTime = sc::steady_clock::now();
             totalElapsedTime = loopStartTime - controlStartTime;
 
-            // PID dt
-            auto current_time = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> elapsed = current_time - prev_time;
-            double dt = elapsed.count();
-            prev_time = current_time;
+            // // PID dt
+            // auto current_time = std::chrono::high_resolution_clock::now();
+            // std::chrono::duration<double> elapsed = current_time - prev_time;
+            // double dt = elapsed.count();
+            // prev_time = current_time;
 
             base_feedback = base_cyclic->RefreshFeedback();
 
             for (int i = 0; i < actuator_count; i++)
             {
-                jntPositions[i] = DEG_TO_RAD(base_feedback.actuators(i).position());  // deg
+                jntPositions[i] = base_feedback.actuators(i).position();              // deg
                 jntVelocities[i] = DEG_TO_RAD(base_feedback.actuators(i).velocity()); // deg
                 jntCurrents[i] = base_feedback.actuators(i).current_motor();
                 jntTorque[i] = base_feedback.actuators(i).torque(); // nm
@@ -697,21 +709,37 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // Kinova API provides only positive angle values
             // This operation is required to align the logic with our safety monitor
             // We need to convert some angles to negative values
-            if (jntPositions[1] > DEG_TO_RAD(180.0))
-                jntPositions[1] = jntPositions[1] - DEG_TO_RAD(360.0);
-            if (jntPositions[3] > DEG_TO_RAD(180.0))
-                jntPositions[3] = jntPositions[3] - DEG_TO_RAD(360.0);
-            if (jntPositions[5] > DEG_TO_RAD(180.0))
-                jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
+            // if (jntPositions[1] > DEG_TO_RAD(180.0))
+            //     jntPositions[1] = jntPositions[1] - DEG_TO_RAD(360.0);
+            // if (jntPositions[3] > DEG_TO_RAD(180.0))
+            //     jntPositions[3] = jntPositions[3] - DEG_TO_RAD(360.0);
+            // if (jntPositions[5] > DEG_TO_RAD(180.0))
+            //     jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
+
+            std::cout << "Pos before: " << jntPositions << std::endl;
+
+            // Create Position instances
+            std::vector<Position> positions;
+            for (const auto &[key, value] : position)
+            {
+                positions.emplace_back("Joint" + std::to_string(key), value);
+            }
+
+            // Adjust a position
+            for (int i = 0; i < actuator_count; i++)
+            {
+                adjustPosition(i, jntPositions[i]);
+                jntPositions[i] = DEG_TO_RAD(jntPositions[i]);
+            }
 
             std::cout << "------------------------------------------------------" << std::endl;
-            std::cout << "Joint : " << actuator_count << std::endl;
+            // std::cout << "Joint : " << actuator_count << std::endl;
             std::cout << "Pos : " << jntPositions << std::endl;
             std::cout << "Vel : " << jntVelocities << std::endl;
             std::cout << "Current : " << jntCurrents << std::endl;
             std::cout << "Torque : " << jntTorque << std::endl;
-            std::cout << "ratios : " << ratios << std::endl;
-            std::cout << "frictions : " << frictions << std::endl;
+            // std::cout << "ratios : " << ratios << std::endl;
+            // std::cout << "frictions : " << frictions << std::endl;
             std::cout << "------------------------------------------------------" << std::endl;
 
             // saveVectorsToFile(jntCurrents, jntTorque, outFile);
@@ -758,6 +786,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // std::cout << "Here main" << std::endl;
 
             // Null Space
+            // kin_dyn.set_q(jntPositions);
+            // kin_dyn.set_qdot(jntVelocities);
             // ComNullSpace = kin_dyn.NullSpaceTask();
 
             // Compute Total Current
@@ -765,6 +795,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             {
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
                 currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i];
+                // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
+                // currentCommand[i] = currentCommand[i] + ComNullSpace[i];
                 // currentCommand[i] = ((currentImpCommand[i] + currentGravityCommand[i]) + ComTotalFrictionDir[i]) + ComNullSpace[i];
             }
 
@@ -775,8 +807,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Mobile base
-
-            BaseCommand = kin_dyn.CommandBase();
+            // BaseCommand = kin_dyn.CommandBase();
 
             std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "gravity : " << TorqueGravity << std::endl;
@@ -785,11 +816,11 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             std::cout << "ComFrictionVelDir : " << ComFrictionVelDir << std::endl;
             std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
             std::cout << "ComNullSpace : " << ComNullSpace << std::endl;
-            std::cout << "currentFrictionCommand : " << currentFrictionCommand << std::endl;
-            std::cout << "BaseCommand : " << BaseCommand << std::endl;
+            std::cout << "ComTotalFrictionDir : " << ComTotalFrictionDir << std::endl;
             std::cout << "------------------------------------------------------" << std::endl;
+            std::cout << "BaseCommand : " << BaseCommand << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
-            std::cout << "pidOutput : " << pidOutput << std::endl;
+            // std::cout << "pidOutput : " << pidOutput << std::endl;
             std::cout << "------------------------------------------------------" << std::endl;
 
             for (int i = 0; i < actuator_count; i++)
@@ -804,8 +835,9 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             }
 
             // Base command send
-            mobile.Move();
-            mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+            // mobile.Move();
+            // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
+            // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
             // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
             // Incrementing identifier ensures actuators can reject out of time frames
@@ -835,7 +867,16 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             {
                 std::cout << "Unknown error." << std::endl;
             }
+
+            // Enforce the constant loop time and count how many times the loop was late
+            if (waitMicroSeconds(loopStartTime, LOOP_DURATION) != 0)
+                slowLoopCount++;
         }
+        // // Mobile
+        // mobile.Move();
+        // mobile.SendRefVelocities(0, 0, 0);
+        // mobile.Stop();
+        // mobile.CloseInterface();
 
         std::cout << "Completed" << std::endl;
 

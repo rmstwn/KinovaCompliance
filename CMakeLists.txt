@@ -86,7 +86,7 @@ set(SOURCES
     src/KinovaPinocchioCasadi/casadi_kin_dyn.cpp
     src/KinovaMobile/kinova_mobile.cpp
     # src/KinovaClient/kinova_client.cpp
-    # src/KinovaClient/specifications.cpp
+    src/KinovaClient/specifications.cpp
     # src/KinovaClient/utilities.cpp
     # src/KinovaControl/controller.cpp
     # src/KinovaControl/rate_counter.cpp

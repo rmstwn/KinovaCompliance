@@ -1,4 +1,6 @@
 #include "KinovaClient/specifications.hpp"
+#include <iostream>
+#include <cmath>
 
 const float CURRENT_TORQUE_RATIOS[] = {0.85, 0.25, 0.85, 1.75, 1.75, 1.75};
 
@@ -30,6 +32,7 @@ std::unordered_map<int, std::vector<float>> current_motor = {
 };
 
 std::unordered_map<int, std::vector<float>> torque;
+
 std::unordered_map<int, std::vector<float>> temperature_motor = {
     {0, {0, 60}},
     {1, {0, 60}},
@@ -69,4 +72,12 @@ std::unordered_map<int, int> actuator_ids = {
 Position::Position(std::string name, std::vector<float> position) {
     this->name = name;
     this->position = position;
+}
+
+void adjustPosition(int joint, double& position) {
+    float lower_bound = ranges["position"][joint][0];
+    float upper_bound = ranges["position"][joint][1];
+    if (position > upper_bound) {
+        position -= 360;
+    }
 }
