@@ -4,7 +4,6 @@ project(KinovaCompliance VERSION 0.1.0 LANGUAGES C CXX)
 include(CTest)
 enable_testing()
 
-
 # Activate C++ 11
 # set (CMAKE_CXX_STANDARD 11)
 
@@ -112,23 +111,3 @@ target_include_directories(KinovaCompliance PRIVATE include/)
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
-
-
-# cmake_minimum_required(VERSION 3.0.0)
-# project(KinovaCompliance VERSION 0.1.0 LANGUAGES C CXX)
-
-# set (CMAKE_CXX_STANDARD 11)
-
-# include(CTest)
-# enable_testing()
-
-# include_directories(include/)
-# link_directories(include/)
-
-# add_executable(mainet main.cpp src/kinova_mobile.cpp)
-# target_include_directories(mainet PRIVATE include/)
-
-
-# set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-# set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-# include(CPack)

@@ -549,21 +549,21 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     std::ofstream data;
     data.open("/home/rama/Documents/cpp/KinovaCompliance/data_current_torque.csv");
 
-    // // Create Mobile Base Serial
-    // std::string portName = "/dev/ttyACM0"; // Example port name
-    // speed_t baudRate = B115200;            // Example baud rate
-    // // Create an instance of KinovaMobileSerial
-    // KinovaMobile::KinovaMobileController mobile(portName);
+    // Create Mobile Base Serial
+    std::string portName = "/dev/ttyACM0"; // Example port name
+    speed_t baudRate = B115200;            // Example baud rate
+    // Create an instance of KinovaMobileSerial
+    KinovaMobile::KinovaMobileController mobile(portName);
 
     // Get actuator count
     unsigned int actuator_count = base->GetActuatorCount().count();
 
-    // PID controllers for each joint
-    std::vector<PIDController> pidControllers;
-    for (size_t i = 0; i < TorqueGravity.size(); ++i)
-    {
-        pidControllers.emplace_back(0.91, 20.0, 0.00002); // Replace with your PID gains
-    }
+    // // PID controllers for each joint
+    // std::vector<PIDController> pidControllers;
+    // for (size_t i = 0; i < TorqueGravity.size(); ++i)
+    // {
+    //     pidControllers.emplace_back(0.91, 20.0, 0.00002); // Replace with your PID gains
+    // }
 
     // Clearing faults
     try
@@ -671,7 +671,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 10;
+        const int TASK_TIME_LIMIT_SEC = 30;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -758,44 +758,40 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //      << (double)jntTorque[4] << ","
             //      << (double)jntTorque[5] << std::endl;
 
+            // Add friction compensation in the direction the joint is moving.
+            // // std::cout << "Set vel done" << std::endl;
+            // ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
+
             // Set current joint position and velocities
             kin_dyn.set_q(jntPositions);
             kin_dyn.set_qdot(jntVelocities);
 
-            // Return the current due to cartesian impedance
-            currentImpCommand = kin_dyn.cartesianImpedance();
-
             // Compute the gravity torque
             TorqueGravity = kin_dyn.computeGravity();
-            // std::cout << "Compute the gravity torque done " << std::endl;
-
             // Compute desired current for gravity compensation
             for (int i = 0; i < actuator_count; i++)
             {
                 currentGravityCommand[i] = (TorqueGravity[i] * ratios[i]);
             }
 
-            // Add friction compensation in the direction the joint is moving.
-            // // std::cout << "Set vel done" << std::endl;
-            // ComFrictionVelDir = kin_dyn.compensateFrictionInMovingDirection();
-
             // Compensate friction in Velocity and Current direction
             kin_dyn.set_current(jntCurrents);
             ComTotalFrictionDir = kin_dyn.compensateFrictionInImpedanceMode(jntCurrents);
 
-            // std::cout << "Here main" << std::endl;
+            // Return the current due to cartesian impedance
+            currentImpCommand = kin_dyn.cartesianImpedance();
 
             // Null Space
-            // kin_dyn.set_q(jntPositions);
-            // kin_dyn.set_qdot(jntVelocities);
-            // ComNullSpace = kin_dyn.NullSpaceTask();
+            kin_dyn.set_q(jntPositions);
+            kin_dyn.set_qdot(jntVelocities);
+            ComNullSpace = kin_dyn.NullSpaceTask();
 
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
             {
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
-                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i];
-                // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
+                // currentCommand[i] = currentGravityCommand[i] + ComTotalFrictionDir[i] + currentImpCommand[i];
+                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
                 // currentCommand[i] = currentCommand[i] + ComNullSpace[i];
                 // currentCommand[i] = ((currentImpCommand[i] + currentGravityCommand[i]) + ComTotalFrictionDir[i]) + ComNullSpace[i];
             }
@@ -807,16 +803,14 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Mobile base
-            // BaseCommand = kin_dyn.CommandBase();
+            BaseCommand = kin_dyn.CommandBase();
 
             std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "gravity : " << TorqueGravity << std::endl;
-            std::cout << "currentImpCommand : " << currentImpCommand << std::endl;
             std::cout << "currentGravityCommand : " << currentGravityCommand << std::endl;
-            std::cout << "ComFrictionVelDir : " << ComFrictionVelDir << std::endl;
-            std::cout << "ComFrictionCurDir : " << ComFrictionCurDir << std::endl;
-            std::cout << "ComNullSpace : " << ComNullSpace << std::endl;
             std::cout << "ComTotalFrictionDir : " << ComTotalFrictionDir << std::endl;
+            std::cout << "currentImpCommand : " << currentImpCommand << std::endl;
+            std::cout << "ComNullSpace : " << ComNullSpace << std::endl;
             std::cout << "------------------------------------------------------" << std::endl;
             std::cout << "BaseCommand : " << BaseCommand << std::endl;
             std::cout << "currentCommand : " << currentCommand << std::endl;
@@ -835,10 +829,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             }
 
             // Base command send
-            // mobile.Move();
-            // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
+            mobile.Move();
+            mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
             // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-            // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
             // Incrementing identifier ensures actuators can reject out of time frames
             base_command.set_frame_id(base_command.frame_id() + 1);
@@ -873,10 +867,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 slowLoopCount++;
         }
         // // Mobile
-        // mobile.Move();
-        // mobile.SendRefVelocities(0, 0, 0);
-        // mobile.Stop();
-        // mobile.CloseInterface();
+        mobile.Move();
+        mobile.SendRefVelocities(0, 0, 0);
+        mobile.Stop();
+        mobile.CloseInterface();
 
         std::cout << "Completed" << std::endl;
 
@@ -912,87 +906,11 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     return return_status;
 }
 
+// using namespace casadi;
+// using namespace std::chrono;
+
 int main(int argc, char **argv)
 {
-    // // Create Mobile Base Serial
-    // std::string portName = "/dev/ttyACM0"; // Example port name
-    // speed_t baudRate = B115200;            // Example baud rate
-    // // Create an instance of KinovaMobileSerial
-    // KinovaMobile::KinovaMobileController mobile(portName);
-
-    // // mobile.SendRefPose(0, 0, 0);
-    // // mobile.Move();
-    // // mobile.Stop();
-    // // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-    // const std::string urdf_filename = PINOCCHIO_MODEL_DIR + std::string("/GEN3-LITE_custom.urdf");
-    // casadi_kin_dyn::CasadiKinDyn kin_dyn(urdf_filename);
-
-    // std::vector<double> command = kin_dyn.CommandBase();
-
-    // while (1)
-    // {
-    //     // mobile.Move();
-    //     // mobile.SendRefVelocities(0.1, 0, 0);
-    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    //     // mobile.Stop();
-
-    //     // mobile.Move();
-    //     // mobile.SendRefVelocities(1, 0, 0);
-    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    //     // mobile.Stop();
-
-    //     // mobile.Move();
-    //     // mobile.SendRefVelocities(0, 0, 0);
-    //     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    //     // mobile.Stop();
-
-    //     // for (float i = 0.1; i <= 1.0; i += 0.1) // Increment by 0.1
-    //     // {
-    //     //     mobile.Move();
-    //     //     mobile.SendRefVelocities(i, 0, 0);
-    //     //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    //     //     // mobile.Stop();
-    //     // }
-
-    //     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
-    //     {
-    //         mobile.Move();
-    //         mobile.SendRefVelocities(i, 0, 0);
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    //         // mobile.Stop();
-    //     }
-
-    //     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
-    //     {
-    //         mobile.Move();
-    //         mobile.SendRefVelocities(i, 0, 0);
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    //         // mobile.Stop();
-    //     }
-
-    //     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
-    //     {
-    //         mobile.Move();
-    //         mobile.SendRefVelocities(0, 0, i);
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    //         // mobile.Stop();
-    //     }
-
-    //     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
-    //     {
-    //         mobile.Move();
-    //         mobile.SendRefVelocities(0, 0, i);
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    //         // mobile.Stop();
-    //     }
-    // }
-
-    // mobile.Stop();
-    // mobile.CloseInterface();
-
-    // return 0;
-
     // Kinova
     auto parsed_args = ParseExampleArguments(argc, argv);
 
@@ -1061,3 +979,227 @@ int main(int argc, char **argv)
 
     return success ? 0 : 1;
 }
+
+// int main(int argc, char **argv)
+// {
+// // Create Mobile Base Serial
+// std::string portName = "/dev/ttyACM0"; // Example port name
+// speed_t baudRate = B115200;            // Example baud rate
+// // Create an instance of KinovaMobileSerial
+// KinovaMobile::KinovaMobileController mobile(portName);
+
+// // mobile.SendRefPose(0, 0, 0);
+// // mobile.Move();
+// // mobile.Stop();
+// // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
+// const std::string urdf_filename = PINOCCHIO_MODEL_DIR + std::string("/GEN3-LITE_custom.urdf");
+// casadi_kin_dyn::CasadiKinDyn kin_dyn(urdf_filename);
+
+// // std::vector<double> command = kin_dyn.CommandBase();
+
+// while (1)
+// {
+//     // mobile.Move();
+//     // mobile.SendRefVelocities(0.1, 0, 0);
+//     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+//     // mobile.Stop();
+
+//     // mobile.Move();
+//     // mobile.SendRefVelocities(1, 0, 0);
+//     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+//     // mobile.Stop();
+
+//     // mobile.Move();
+//     // mobile.SendRefVelocities(0, 0, 0);
+//     // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+//     // mobile.Stop();
+
+//     // for (float i = 0.1; i <= 1.0; i += 0.1) // Increment by 0.1
+//     // {
+//     //     mobile.Move();
+//     //     mobile.SendRefVelocities(i, 0, 0);
+//     //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+//     //     // mobile.Stop();
+//     // }
+
+//     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
+//     {
+//         mobile.Move();
+//         mobile.SendRefVelocities(i, 0, 0);
+//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//         // mobile.Stop();
+//     }
+
+//     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
+//     {
+//         mobile.Move();
+//         mobile.SendRefVelocities(i, 0, 0);
+//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//         // mobile.Stop();
+//     }
+
+//     for (float i = 0.0; i <= 0.5; i += 0.001) // Increment by 0.1
+//     {
+//         mobile.Move();
+//         mobile.SendRefVelocities(0, 0, i);
+//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//         // mobile.Stop();
+//     }
+
+//     for (float i = 0.5; i >= 0.0; i -= 0.001) // Increment by 0.1
+//     {
+//         mobile.Move();
+//         mobile.SendRefVelocities(0, 0, i);
+//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//         // mobile.Stop();
+//     }
+// }
+
+// mobile.Stop();
+// mobile.CloseInterface();
+
+// return 0;
+// }
+
+// int main(int argc, char **argv)
+// {
+//     // // Variables
+//     // SX x = SX::sym("x", 2, 2);
+//     // SX y = SX::sym("y");
+
+//     // // Simple function
+//     // Function f("f", {x, y}, {sqrt(y) - 1, sin(x) - y});
+
+//     // // Generate C-code
+//     // f.generate("f");
+
+//     // // Compile the C-code to a shared library
+//     // std::string compile_command = "gcc -fPIC -shared -O3 f.c -o f.so";
+//     // int flag = system(compile_command.c_str());
+//     // casadi_assert(flag == 0, "Compilation failed");
+
+//     // // Usage from C++
+//     // usage_cplusplus();
+
+//     // // List of C files to compile
+//     // std::vector<std::string> files = {
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dq.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dx.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/F.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/g.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/J.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/JT.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/lam.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/mu.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/N.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/Nv.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/T.c",
+//     //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/x.c"
+//     // };
+
+//     // // Output directory for .so files
+//     // std::string output_dir = "/home/rama/Documents/cpp/KinovaCompliance/build/";
+
+//     // // Compile each C file into a shared library
+//     // for (const auto& file : files) {
+//     //     // Extract the file name
+//     //     size_t pos = file.find_last_of('/');
+//     //     std::string filename = file.substr(pos + 1);
+
+//     //     // Remove the .c extension from the file name
+//     //     filename = filename.substr(0, filename.size() - 2); // remove last two characters (.c)
+
+//     //     // Formulate the output path for the .so file
+//     //     std::string output_path = output_dir + filename + ".so";
+
+//     //     // Compile command
+//     //     std::string compile_command = "gcc -fPIC -shared -O3 " + file + " -o " + output_path;
+
+//     //     // Execute compilation command
+//     //     int flag = system(compile_command.c_str());
+
+//     //     // Check if compilation was successful
+//     //     if (flag == 0) {
+//     //         std::cout << "Compilation successful for " << file << std::endl;
+//     //     } else {
+//     //         std::cout << "Compilation failed for " << file << std::endl;
+//     //     }
+//     // }
+
+//     // Initialize a vector of doubles with 5 zeros and append the scalar 6
+//     std::vector<double> q = {0, 20, 90, 0, 0, 0};
+
+//     //////////////////////////////////////////////////////////////
+//     auto start = high_resolution_clock::now();
+
+//     // Use CasADi's "external" to load the compiled function
+//     Function g = external("g");
+
+//     // Create a DM object from the modified vector q
+//     DM input = DM(q);
+//     // Create a vector with the single input
+//     std::vector<DM> arg = {input};
+//     // Call function g with the single input
+//     std::vector<DM> res = g(arg);
+
+//     std::cout << "result G(0): " << res.at(0) << std::endl;
+
+//     auto stop = high_resolution_clock::now();
+//     auto duration = duration_cast<microseconds>(stop - start);
+//     std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
+
+//     //////////////////////////////////////////////////////////////
+
+//     //////////////////////////////////////////////////////////////
+//     std::vector<double> TorqueGravity(6, 0.0);
+
+//     // You should change here to set up your own URDF file or just pass it as an argument of this example.
+//     const std::string urdf_filename = PINOCCHIO_MODEL_DIR + std::string("/GEN3-LITE_custom.urdf");
+//     // Create an instance of CasadiKinDyn
+//     casadi_kin_dyn::CasadiKinDyn kin_dyn(urdf_filename);
+
+//     start = high_resolution_clock::now();
+
+//     kin_dyn.set_q(q);
+//     TorqueGravity = kin_dyn.computeGravity();
+
+//     std::cout << "result G(1): " << TorqueGravity << std::endl;
+
+//     stop = high_resolution_clock::now();
+//     duration = duration_cast<microseconds>(stop - start);
+//     std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
+
+//     //////////////////////////////////////////////////////////////
+
+//     //////////////////////////////////////////////////////////////
+//     start = high_resolution_clock::now();
+
+//     Function J = external("J");
+
+//     // Create a vector with the single input
+//     std::vector<DM> arg_j = {input};
+//     std::vector<DM> res_j = J(arg_j);
+
+//     std::cout << "result J(0): " << res_j.at(0) << std::endl;
+
+//     stop = high_resolution_clock::now();
+//     duration = duration_cast<microseconds>(stop - start);
+//     std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
+//     //////////////////////////////////////////////////////////////
+
+//     //////////////////////////////////////////////////////////////
+
+//     start = high_resolution_clock::now();
+
+//     std::string ss = kin_dyn.jacobian("END_EFFECTOR", casadi_kin_dyn::CasadiKinDyn::ReferenceFrame::LOCAL_WORLD_ALIGNED);
+
+//     std::cout << "result J(1): " << ss << std::endl;
+
+//     stop = high_resolution_clock::now();
+//     duration = duration_cast<microseconds>(stop - start);
+//     std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
+//     //////////////////////////////////////////////////////////////
+
+//     return 0;
+// }

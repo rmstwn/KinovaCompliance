@@ -79,6 +79,7 @@
         "csignal": "cpp",
         "any": "cpp",
         "shared_mutex": "cpp",
-        "dense": "cpp"
+        "dense": "cpp",
+        "core": "cpp"
     }
 }
