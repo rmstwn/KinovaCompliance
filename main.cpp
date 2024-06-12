@@ -92,10 +92,18 @@ struct FeedbackData
     std::vector<double> torques;
 };
 
+// Struct to hold base command data
+struct CommandData
+{
+    std::vector<double> basecommand;
+};
+
 // Shared queue for feedback data
 std::mutex queueMutex;
 std::queue<FeedbackData> feedbackQueue;
 std::condition_variable queueCondition;
+
+std::queue<CommandData> commandQueue;
 
 // PID Controller class
 class PIDController
@@ -528,6 +536,46 @@ std::vector<double> &operator+=(std::vector<double> &lhs, const std::vector<doub
 
 // std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
 
+// Function for dynamic calculations
+void sendMobileCommands()
+{
+    // Create Mobile Base Serial
+    std::string portName = "/dev/ttyACM0"; // Example port name
+    speed_t baudRate = B115200;            // Example baud rate
+    // Create an instance of KinovaMobileSerial
+    KinovaMobile::KinovaMobileController mobile(portName);
+
+    // Send velocities in a loop
+    while (true)
+    {
+
+        // Retrieve feedback data from the queue
+        CommandData base;
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            // Wait until the queue is not empty
+            queueCondition.wait(lock, []
+                                { return !commandQueue.empty(); });
+            base = commandQueue.front();
+            commandQueue.pop();
+        }
+
+        std::cout << "Send BaseCommand : " << base.basecommand << std::endl;
+
+        // Send velocities
+        mobile.SendRefVelocities(static_cast<float>(base.basecommand[0]), static_cast<float>(base.basecommand[1]), static_cast<float>(base.basecommand[2]));
+
+        // Wait for 5 milliseconds
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Mobile
+    mobile.Move();
+    mobile.SendRefVelocities(0, 0, 0);
+    mobile.Stop();
+    mobile.CloseInterface();
+}
+
 bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::BaseCyclic::BaseCyclicClient *base_cyclic, k_api::ActuatorConfig::ActuatorConfigClient *actuator_config)
 {
     bool return_status = true;
@@ -671,7 +719,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 60;
+        const int TASK_TIME_LIMIT_SEC = 30;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -681,22 +729,29 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         sc::time_point<sc::steady_clock> loopStartTime = sc::steady_clock::now();
         sc::duration<int64_t, nano> totalElapsedTime = loopStartTime - controlStartTime;
 
+        sc::time_point<sc::steady_clock> UpdateBaseCommandTime = sc::steady_clock::now();
+        sc::duration<double, milli> BaseCommandTimeDelay = loopStartTime - UpdateBaseCommandTime;
+        const sc::milliseconds COMMAND_BASE_TIME(5);
+
         // PID
         auto prev_time = std::chrono::high_resolution_clock::now();
+
+        // std::thread baseCommadThread(sendMobileCommands);
 
         while (totalElapsedTime < TASK_TIME_LIMIT_MICRO)
         {
             iterationCount++;
             loopStartTime = sc::steady_clock::now();
             totalElapsedTime = loopStartTime - controlStartTime;
+            BaseCommandTimeDelay = loopStartTime - UpdateBaseCommandTime;
 
-            // // PID dt
-            // auto current_time = std::chrono::high_resolution_clock::now();
-            // std::chrono::duration<double> elapsed = current_time - prev_time;
-            // double dt = elapsed.count();
-            // prev_time = current_time;
+                // // PID dt
+                // auto current_time = std::chrono::high_resolution_clock::now();
+                // std::chrono::duration<double> elapsed = current_time - prev_time;
+                // double dt = elapsed.count();
+                // prev_time = current_time;
 
-            base_feedback = base_cyclic->RefreshFeedback();
+                base_feedback = base_cyclic->RefreshFeedback();
 
             for (int i = 0; i < actuator_count; i++)
             {
@@ -828,21 +883,41 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
                 base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
             }
 
+            // CommandData base;
+            // for (int i = 0; i < 4; i++)
+            // {
+            //     base.basecommand.push_back(BaseCommand[i]);
+            // }
+
+            // // Lock the queue and push the feedback data
+            // {
+            //     std::lock_guard<std::mutex> lock(queueMutex);
+            //     commandQueue.push(base);
+            // }
+            // // Notify the condition variable to wake up the other thread
+            // queueCondition.notify_one();
+
             // Base command send
-            mobile.Move();
-            mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
-            // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // mobile.Move();
+            // // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
+            // mobile.SendRefVelocities(static_cast<float>(-BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
+            {
+                mobile.Move();
+                mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+                UpdateBaseCommandTime = sc::steady_clock::now();
+            }
 
             // Incrementing identifier ensures actuators can reject out of time frames
-            base_command.set_frame_id(base_command.frame_id() + 1);
-            if (base_command.frame_id() > 65535)
-                base_command.set_frame_id(0);
+            // base_command.set_frame_id(base_command.frame_id() + 1);
+            // if (base_command.frame_id() > 65535)
+            //     base_command.set_frame_id(0);
 
-            for (int idx = 0; idx < actuator_count; idx++)
-            {
-                base_command.mutable_actuators(idx)->set_command_id(base_command.frame_id());
-            }
+            // for (int idx = 0; idx < actuator_count; idx++)
+            // {
+            //     base_command.mutable_actuators(idx)->set_command_id(base_command.frame_id());
+            // }
 
             try
             {
@@ -871,6 +946,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         mobile.SendRefVelocities(0, 0, 0);
         mobile.Stop();
         mobile.CloseInterface();
+
+        // baseCommadThread.join();
 
         std::cout << "Completed" << std::endl;
 

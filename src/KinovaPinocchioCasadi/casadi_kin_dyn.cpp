@@ -126,11 +126,13 @@ namespace casadi_kin_dyn
 
         //////  Define the scalar values
         //// Cartesian impedance:
-        double Kd_scalar = 40.0;
-        double Dd_scalar = 3.0;
+        double Kd_scalar = 45.0;
+        double Dd_scalar = 4.0;
         double thr_cart_error = 0.001; // m
         double error_cart_MAX = 0.1;   // m
-        double thr_dynamic = 0.3;      // rad/s
+        double thr_dynamic = 0.9;      // rad/s
+
+        double sum = 0.0;
 
         // Create identity matrices and scale them
         Eigen::MatrixXd Kd = Kd_scalar * Eigen::MatrixXd::Identity(3, 3);
@@ -147,10 +149,10 @@ namespace casadi_kin_dyn
         //// Base
         double thr_pos_error = 0.05; // m
         double thr_rot_error = DEG_TO_RAD(10);
-        double K_pos = 3;
-        double gain_pos_MAX = 0.3;
-        double K_rot = 0.2;
-        double gain_rot_MAX = 0.2;
+        double K_pos = 4;
+        double gain_pos_MAX = 0.4;
+        double K_rot = 0.4;
+        double gain_rot_MAX = 0.4;
     };
 
     // CasadiKinDyn::Impl::Impl(urdf::ModelInterfaceSharedPtr urdf_model)
@@ -196,53 +198,53 @@ namespace casadi_kin_dyn
 
         pref << 0, 20, 90, 0, 0, 0;
 
-        // List of C files to compile
-        std::vector<std::string> files = {
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dq.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dx.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/F.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/g.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/J.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/JT.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/lam.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/mu.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/N.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/Nv.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/T.c",
-            "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/x.c"};
+        // // List of C files to compile
+        // std::vector<std::string> files = {
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dq.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/dx.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/F.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/g.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/J.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/JT.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/lam.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/mu.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/N.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/Nv.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/T.c",
+        //     "/home/rama/Documents/cpp/KinovaCompliance/src/KinovaSymbolics/x.c"};
 
-        // Output directory for .so files
-        std::string output_dir = "/home/rama/Documents/cpp/KinovaCompliance/build/";
+        // // Output directory for .so files
+        // std::string output_dir = "/home/rama/Documents/cpp/KinovaCompliance/build/";
 
-        // Compile each C file into a shared library
-        for (const auto &file : files)
-        {
-            // Extract the file name
-            size_t pos = file.find_last_of('/');
-            std::string filename = file.substr(pos + 1);
+        // // Compile each C file into a shared library
+        // for (const auto &file : files)
+        // {
+        //     // Extract the file name
+        //     size_t pos = file.find_last_of('/');
+        //     std::string filename = file.substr(pos + 1);
 
-            // Remove the .c extension from the file name
-            filename = filename.substr(0, filename.size() - 2); // remove last two characters (.c)
+        //     // Remove the .c extension from the file name
+        //     filename = filename.substr(0, filename.size() - 2); // remove last two characters (.c)
 
-            // Formulate the output path for the .so file
-            std::string output_path = output_dir + filename + ".so";
+        //     // Formulate the output path for the .so file
+        //     std::string output_path = output_dir + filename + ".so";
 
-            // Compile command
-            std::string compile_command = "gcc -fPIC -shared -O3 " + file + " -o " + output_path;
+        //     // Compile command
+        //     std::string compile_command = "gcc -fPIC -shared -O3 " + file + " -o " + output_path;
 
-            // Execute compilation command
-            int flag = system(compile_command.c_str());
+        //     // Execute compilation command
+        //     int flag = system(compile_command.c_str());
 
-            // Check if compilation was successful
-            if (flag == 0)
-            {
-                std::cout << "Compilation successful for " << file << std::endl;
-            }
-            else
-            {
-                std::cout << "Compilation failed for " << file << std::endl;
-            }
-        }
+        //     // Check if compilation was successful
+        //     if (flag == 0)
+        //     {
+        //         std::cout << "Compilation successful for " << file << std::endl;
+        //     }
+        //     else
+        //     {
+        //         std::cout << "Compilation failed for " << file << std::endl;
+        //     }
+        // }
     }
 
     void CasadiKinDyn::Impl::set_q(const std::vector<double> &joint_positions)
@@ -981,38 +983,47 @@ namespace casadi_kin_dyn
         // std::cout << "_qdot : " << _qdot << std::endl;
         // std::cout << "frictions : " << frictions << std::endl;
 
-        // Check if sizes match
-        if (_qdot.size1() != frictions.size())
+        // // Check if sizes match
+        // if (_qdot.size1() != frictions.size())
+        // {
+        //     std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
+        //     return std::vector<double>();
+        // }
+
+        // // Convert _qdot to Eigen::VectorXd
+        // Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
+        // for (int i = 0; i < _qdot.size1(); ++i)
+        // {
+        //     dq(i) = casadi::DM(_qdot(i)).scalar();
+        // }
+
+        // // Compute frac_v
+        // Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
+
+        // // Compute sign_dq
+        // Eigen::VectorXd sign_dq = dq.array().sign();
+
+        // // Convert frictions to Eigen::VectorXd for element-wise multiplication
+        // Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
+        // for (int i = 0; i < _qdot.size1(); ++i)
+        // {
+        //     frictions_vector(i) = frictions[i];
+        // }
+
+        // // Compute the friction compensation
+        // Eigen::VectorXd friction_compensation = frac_v.array() * sign_dq.array() * frictions_vector.array();
+
+        // // Convert the result back to std::vector<double>
+        // std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
+
+        std::vector<double> dq = static_cast<std::vector<double>>(_qdot);
+        std::vector<double> result(frictions.size());
+
+        for (int i = 0; i < dq.size(); ++i)
         {
-            std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
-            return std::vector<double>();
+            double frac_v = min(abs(dq[i]) / thr_dynamic, 1.0);
+            result[i] = frac_v * (dq[i] >= 0 ? 1 : -1) * frictions[i];
         }
-
-        // Convert _qdot to Eigen::VectorXd
-        Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
-        for (int i = 0; i < _qdot.size1(); ++i)
-        {
-            dq(i) = casadi::DM(_qdot(i)).scalar();
-        }
-
-        // Compute frac_v
-        Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
-
-        // Compute sign_dq
-        Eigen::VectorXd sign_dq = dq.array().sign();
-
-        // Convert frictions to Eigen::VectorXd for element-wise multiplication
-        Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
-        for (int i = 0; i < _qdot.size1(); ++i)
-        {
-            frictions_vector(i) = frictions[i];
-        }
-
-        // Compute the friction compensation
-        Eigen::VectorXd friction_compensation = frac_v.array() * sign_dq.array() * frictions_vector.array();
-
-        // Convert the result back to std::vector<double>
-        std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
 
         return result;
     }
@@ -1024,47 +1035,58 @@ namespace casadi_kin_dyn
         // std::cout << "frictions : " << frictions << std::endl;
         // std::cout << "_current : " << _current << std::endl;
 
-        // Check if sizes match
-        if (_qdot.size1() != frictions.size())
+        // // Check if sizes match
+        // if (_qdot.size1() != frictions.size())
+        // {
+        //     std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
+        //     return std::vector<double>();
+        // }
+
+        // // Convert _qdot to Eigen::VectorXd
+        // Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
+        // for (int i = 0; i < _qdot.size1(); ++i)
+        // {
+        //     dq(i) = casadi::DM(_qdot(i)).scalar();
+        // }
+
+        // // Convert _current to Eigen::VectorXd
+        // Eigen::VectorXd current = Eigen::VectorXd::Zero(_current.size1());
+        // for (int i = 0; i < _current.size1(); ++i)
+        // {
+        //     current(i) = casadi::DM(_current(i)).scalar();
+        // }
+
+        // // Compute frac_v
+        // Eigen::VectorXd frac_v = Eigen::VectorXd::Ones(dq.size());
+        // frac_v -= (dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic).cwiseMin(1.0);
+        // // Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
+
+        // // Compute sign_dq
+        // Eigen::VectorXd sign_current = current.array().sign();
+
+        // // Convert frictions to Eigen::VectorXd for element-wise multiplication
+        // Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
+        // for (int i = 0; i < _qdot.size1(); ++i)
+        // {
+        //     frictions_vector(i) = frictions[i];
+        // }
+
+        // // Compute the friction compensation
+        // Eigen::VectorXd friction_compensation = frac_v.array() * sign_current.array() * frictions_vector.array();
+
+        // // Convert the result back to std::vector<double>
+        // std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
+
+        std::vector<double> dq = static_cast<std::vector<double>>(_qdot);
+        std::vector<double> current = static_cast<std::vector<double>>(_current);
+
+        std::vector<double> result(frictions.size());
+
+        for (int i = 0; i < dq.size(); ++i)
         {
-            std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
-            return std::vector<double>();
+            double frac_v = 1 - min(abs(dq[i]) / thr_dynamic, 1.0);
+            result[i] = frac_v * (current[i] >= 0 ? 1 : -1) * frictions[i];
         }
-
-        // Convert _qdot to Eigen::VectorXd
-        Eigen::VectorXd dq = Eigen::VectorXd::Zero(_qdot.size1());
-        for (int i = 0; i < _qdot.size1(); ++i)
-        {
-            dq(i) = casadi::DM(_qdot(i)).scalar();
-        }
-
-        // Convert _current to Eigen::VectorXd
-        Eigen::VectorXd current = Eigen::VectorXd::Zero(_current.size1());
-        for (int i = 0; i < _current.size1(); ++i)
-        {
-            current(i) = casadi::DM(_current(i)).scalar();
-        }
-
-        // Compute frac_v
-        Eigen::VectorXd frac_v = Eigen::VectorXd::Ones(dq.size());
-        frac_v -= (dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic).cwiseMin(1.0);
-        // Eigen::VectorXd frac_v = dq.cwiseAbs().cwiseMin(thr_dynamic) / thr_dynamic;
-
-        // Compute sign_dq
-        Eigen::VectorXd sign_current = current.array().sign();
-
-        // Convert frictions to Eigen::VectorXd for element-wise multiplication
-        Eigen::VectorXd frictions_vector = Eigen::VectorXd::Zero(_qdot.size1());
-        for (int i = 0; i < _qdot.size1(); ++i)
-        {
-            frictions_vector(i) = frictions[i];
-        }
-
-        // Compute the friction compensation
-        Eigen::VectorXd friction_compensation = frac_v.array() * sign_current.array() * frictions_vector.array();
-
-        // Convert the result back to std::vector<double>
-        std::vector<double> result(friction_compensation.data(), friction_compensation.data() + friction_compensation.size());
 
         return result;
     }
@@ -1094,7 +1116,7 @@ namespace casadi_kin_dyn
         // std::cout << "compensation : " << compensation << std::endl;
 
         // Decrease compensation when close to target
-        double sum = 0.0;
+        sum = 0.0;
         for (double val : x_e)
         {
             sum += val * val;
@@ -1431,8 +1453,8 @@ namespace casadi_kin_dyn
                 direction[i] = error[i] / magnitude;
             }
             double gain = std::min(magnitude * K_pos, gain_pos_MAX);
-            command[0] = -direction[1] * gain;
-            command[1] = direction[0] * gain;
+            command[0] = direction[0] * gain;
+            command[1] = - direction[1] * gain;
         }
 
         // Rotation:
