@@ -745,13 +745,13 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             totalElapsedTime = loopStartTime - controlStartTime;
             BaseCommandTimeDelay = loopStartTime - UpdateBaseCommandTime;
 
-                // // PID dt
-                // auto current_time = std::chrono::high_resolution_clock::now();
-                // std::chrono::duration<double> elapsed = current_time - prev_time;
-                // double dt = elapsed.count();
-                // prev_time = current_time;
+            // // PID dt
+            // auto current_time = std::chrono::high_resolution_clock::now();
+            // std::chrono::duration<double> elapsed = current_time - prev_time;
+            // double dt = elapsed.count();
+            // prev_time = current_time;
 
-                base_feedback = base_cyclic->RefreshFeedback();
+            base_feedback = base_cyclic->RefreshFeedback();
 
             for (int i = 0; i < actuator_count; i++)
             {
@@ -822,12 +822,12 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             kin_dyn.set_qdot(jntVelocities);
 
             // Compute the gravity torque
-            TorqueGravity = kin_dyn.computeGravity();
-            // Compute desired current for gravity compensation
-            for (int i = 0; i < actuator_count; i++)
-            {
-                currentGravityCommand[i] = (TorqueGravity[i] * ratios[i]);
-            }
+            currentGravityCommand = kin_dyn.computeGravity();
+            // // Compute desired current for gravity compensation
+            // for (int i = 0; i < actuator_count; i++)
+            // {
+            //     currentGravityCommand[i] = (TorqueGravity[i] * ratios[i]);
+            // }
 
             // Compensate friction in Velocity and Current direction
             kin_dyn.set_current(jntCurrents);
@@ -836,14 +836,15 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // Return the current due to cartesian impedance
             currentImpCommand = kin_dyn.cartesianImpedance();
 
-            // Null Space
-            kin_dyn.set_q(jntPositions);
-            kin_dyn.set_qdot(jntVelocities);
-            ComNullSpace = kin_dyn.NullSpaceTask();
+            // // Null Space
+            // kin_dyn.set_q(jntPositions);
+            // kin_dyn.set_qdot(jntVelocities);
+            // ComNullSpace = kin_dyn.NullSpaceTask();
 
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
             {
+                // currkentCommand[i] = currentGravityCommand[i];
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
                 // currentCommand[i] = currentGravityCommand[i] + ComTotalFrictionDir[i] + currentImpCommand[i];
                 currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
@@ -861,7 +862,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             BaseCommand = kin_dyn.CommandBase();
 
             std::cout << "------------------------------------------------------" << std::endl;
-            std::cout << "gravity : " << TorqueGravity << std::endl;
+            // std::cout << "gravity : " << TorqueGravity << std::endl;
             std::cout << "currentGravityCommand : " << currentGravityCommand << std::endl;
             std::cout << "ComTotalFrictionDir : " << ComTotalFrictionDir << std::endl;
             std::cout << "currentImpCommand : " << currentImpCommand << std::endl;

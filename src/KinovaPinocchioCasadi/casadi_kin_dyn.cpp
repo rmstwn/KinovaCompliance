@@ -687,6 +687,13 @@ namespace casadi_kin_dyn
 
         std::vector<double> gravity = static_cast<std::vector<double>>(res.at(0));
 
+        // std::cout << "gravity: " << gravity << std::endl;
+
+        for (size_t i = 0; i < gravity.size(); ++i)
+        {
+            gravity[i] = gravity[i] * ratios[i];
+        }
+
         return gravity;
     }
 
@@ -966,8 +973,10 @@ namespace casadi_kin_dyn
         // Multiply corresponding elements of vec1 and vec2 and store the result in result vector
         for (size_t i = 0; i < torque.size(); ++i)
         {
-            // current.push_back(torque[i] * ratios[i]);
-            current.push_back(torque[i]);
+            //current.push_back(torque[i] * ratios[i]);
+            //current.push_back(torque[i]);
+            //current[i] = torque[i] * ratios[i];
+            current[i] = torque[i];
         }
 
         // std::cout << "current : " << current << std::endl;
@@ -1393,7 +1402,9 @@ namespace casadi_kin_dyn
         for (size_t i = 0; i < current.size(); ++i)
         {
             // current.push_back(torque[i] * ratios[i]);
-            result.push_back(N_result[i] * current[i]);
+            // result.push_back(N_result[i] * current[i]);
+            current[i] = torque[i] * ratios[i];
+            result[i] = N_result[i] * current[i];
         }
 
         return result;
@@ -1454,7 +1465,7 @@ namespace casadi_kin_dyn
             }
             double gain = std::min(magnitude * K_pos, gain_pos_MAX);
             command[0] = direction[0] * gain;
-            command[1] = - direction[1] * gain;
+            command[1] = -direction[1] * gain;
         }
 
         // Rotation:
