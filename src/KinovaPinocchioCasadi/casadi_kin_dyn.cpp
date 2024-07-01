@@ -130,7 +130,7 @@ namespace casadi_kin_dyn
         double Dd_scalar = 4.0;
         double thr_cart_error = 0.001; // m
         double error_cart_MAX = 0.1;   // m
-        double thr_dynamic = 0.9;      // rad/s
+        double thr_dynamic = 0.5;      // rad/s
 
         double sum = 0.0;
 
@@ -147,12 +147,12 @@ namespace casadi_kin_dyn
         Eigen::MatrixXd D_n = D_n_scalar * Eigen::MatrixXd::Identity(6, 6);
 
         //// Base
-        double thr_pos_error = 0.05; // m
+        double thr_pos_error = 0.04; // m
         double thr_rot_error = DEG_TO_RAD(10);
-        double K_pos = 4;
-        double gain_pos_MAX = 0.4;
-        double K_rot = 0.4;
-        double gain_rot_MAX = 0.4;
+        double K_pos = 5;
+        double gain_pos_MAX = 0.6;
+        double K_rot = 0.5;
+        double gain_rot_MAX = 0.6;
     };
 
     // CasadiKinDyn::Impl::Impl(urdf::ModelInterfaceSharedPtr urdf_model)
