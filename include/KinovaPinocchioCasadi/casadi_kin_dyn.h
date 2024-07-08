@@ -45,7 +45,10 @@ namespace casadi_kin_dyn
 
     // custom
     std::vector<double> computeGravity();
-    std::vector<double> cartesianImpedance();
+    // std::vector<double> cartesianImpedance();
+    // std::pair<std::vector<double>, std::vector<double>> cartesianImpedance();
+    std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> cartesianImpedance();
+
     std::vector<double> compensateFrictionInMovingDirection();
     std::vector<double> compensateFrictionInCurrentDirection();
     std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
@@ -53,7 +56,10 @@ namespace casadi_kin_dyn
     std::vector<double> CommandBase();
     std::vector<double> CommandBaseDirection();
     std::vector<double> CommandBaseRotation();
-      
+
+    // Kinematics
+    std::vector<double> ComputeCLIK(std::vector<double> target_position);
+
     std::vector<double> q_min() const;
     std::vector<double> q_max() const;
     std::vector<std::string> joint_names() const;

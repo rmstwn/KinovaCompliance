@@ -18,6 +18,7 @@
 
 #include "pinocchio/autodiff/casadi.hpp"
 #include "pinocchio/math/casadi.hpp"
+#include "pinocchio/spatial/explog.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/Core>
@@ -69,7 +70,10 @@ namespace casadi_kin_dyn
         std::string aba();
 
         std::vector<double> computeGravity();
-        std::vector<double> cartesianImpedance();
+        // std::vector<double> cartesianImpedance();
+        // std::pair<std::vector<double>, std::vector<double>> cartesianImpedance();
+        std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> cartesianImpedance();
+
         std::vector<double> compensateFrictionInMovingDirection();
         std::vector<double> compensateFrictionInCurrentDirection();
         std::vector<double> compensateFrictionInImpedanceMode(std::vector<double> current);
@@ -77,6 +81,9 @@ namespace casadi_kin_dyn
         std::vector<double> CommandBase();
         std::vector<double> CommandBaseDirection();
         std::vector<double> CommandBaseRotation();
+
+        // Kinematics
+        std::vector<double> ComputeCLIK(std::vector<double> target_position);
 
         void set_q(const std::vector<double> &joint_positions);
         void set_qdot(const std::vector<double> &joint_velocities);
@@ -97,6 +104,9 @@ namespace casadi_kin_dyn
         static casadi::SX eigmat_to_cas(const MatrixXs &eig);
 
         static VectorXd vectorToEigen(const std::vector<double> &vec);
+
+        // Kinematics
+        static double calculateNorm(const std::vector<double> &vec);
 
         // // custom
         // static double calculateNorm(const std::vector<double> &vec);
@@ -127,10 +137,10 @@ namespace casadi_kin_dyn
         //////  Define the scalar values
         //// Cartesian impedance:
         double Kd_scalar = 45.0;
-        double Dd_scalar = 4.0;
+        double Dd_scalar = 5.0;
         double thr_cart_error = 0.001; // m
         double error_cart_MAX = 0.1;   // m
-        double thr_dynamic = 0.5;      // rad/s
+        double thr_dynamic = 0.8;      // rad/s
 
         double sum = 0.0;
 
@@ -153,6 +163,12 @@ namespace casadi_kin_dyn
         double gain_pos_MAX = 0.6;
         double K_rot = 0.5;
         double gain_rot_MAX = 0.6;
+
+        // Kinematics
+        const double eps = 0.01;
+        const int IT_MAX = 1000;
+        const double DT = 1e-1;
+        const double damp = 1e-6;
     };
 
     // CasadiKinDyn::Impl::Impl(urdf::ModelInterfaceSharedPtr urdf_model)
@@ -322,6 +338,8 @@ namespace casadi_kin_dyn
         std::vector<DM> res = x(arg_x);
 
         target_x = static_cast<std::vector<double>>(res.at(0));
+
+        cout << "target_x" << target_x << endl;
     }
 
     std::vector<double> CasadiKinDyn::Impl::q_min() const
@@ -868,7 +886,125 @@ namespace casadi_kin_dyn
     //     return result;
     // }
 
-    std::vector<double> CasadiKinDyn::Impl::cartesianImpedance()
+    // std::vector<double> CasadiKinDyn::Impl::cartesianImpedance()
+    // {
+    //     x_e = {0.0, 0.0, 0.0};
+
+    //     // Return pos x;
+    //     DM input_q = DM(_q);
+    //     std::vector<DM> arg_x = {input_q};
+
+    //     Function x = external("x");
+    //     std::vector<DM> res = x(arg_x);
+
+    //     std::vector<double> current_x = static_cast<std::vector<double>>(res.at(0));
+
+    //     // Compute error vector
+    //     std::vector<double> error;
+    //     for (size_t i = 0; i < target_x.size(); ++i)
+    //     {
+    //         error.push_back(target_x[i] - current_x[i]);
+    //     }
+
+    //     // std::cout << "target_x : " << target_x << std::endl;
+    //     // std::cout << "current_x : " << current_x << std::endl;
+    //     // std::cout << "error : " << error << std::endl;
+
+    //     // Compute magnitude of error
+    //     double magnitude = std::sqrt(std::pow(error[0], 2) + std::pow(error[1], 2) + std::pow(error[2], 2));
+
+    //     // Compute x_e if magnitude is above threshold
+    //     if (magnitude > thr_cart_error)
+    //     {
+    //         std::vector<double> vector;
+    //         for (size_t i = 0; i < error.size(); ++i)
+    //         {
+    //             vector.push_back(error[i] / magnitude);
+    //         }
+    //         for (size_t i = 0; i < vector.size(); ++i)
+    //         {
+    //             x_e[i] = vector[i] * std::min(error_cart_MAX, magnitude);
+    //         }
+    //     }
+
+    //     // Return vel dx;
+    //     DM input_qdot = DM(_qdot);
+    //     std::vector<DM> arg_dx = {input_q, input_qdot};
+
+    //     Function dx = external("dx");
+    //     res = dx(arg_dx);
+
+    //     std::vector<double> current_dx = static_cast<std::vector<double>>(res.at(0));
+
+    //     // Compute dx_e¥
+    //     for (size_t i = 0; i < dx_e.size(); ++i)
+    //     {
+    //         dx_e[i] = dx_d[i] - current_dx[i];
+    //     }
+    //     // std::cout << "dx_d : " << dx_d << std::endl;
+    //     // std::cout << "current_dx : " << current_dx << std::endl;
+    //     // std::cout << "dx_e : " << dx_e << std::endl;
+
+    //     // Compute force
+    //     // Check if dimensions of Kd and Dd match expected dimensions
+    //     if (Kd.rows() != dx_e.size() || Kd.cols() != x_e.size() || Dd.rows() != dx_e.size() || Dd.cols() != x_e.size())
+    //     {
+    //         std::cerr << "Error: Dimension mismatch in Kd or Dd matrices\n";
+    //         // Handle error appropriately, e.g., return or throw exception
+    //     }
+
+    //     // Compute force
+    //     std::vector<double> force;
+    //     for (int i = 0; i < Kd.rows(); ++i)
+    //     {
+    //         double val = 0.0;
+    //         for (int j = 0; j < Kd.cols(); ++j)
+    //         {
+    //             // Check if indices are within bounds
+    //             if (j < x_e.size() && j < dx_e.size())
+    //             {
+    //                 val += Kd(i, j) * x_e[j] + Dd(i, j) * dx_e[j];
+    //             }
+    //             else
+    //             {
+    //                 std::cerr << "Error: Index out of bounds in x_e or dx_e\n";
+    //                 // Handle error appropriately, e.g., return or throw exception
+    //             }
+    //         }
+    //         force.push_back(val);
+    //     }
+
+    //     // Return T
+    //     DM input_force = DM(force);
+    //     std::vector<DM> arg_T = {input_q, input_force};
+
+    //     Function T = external("T");
+    //     res = T(arg_T);
+
+    //     std::vector<double> torque = static_cast<std::vector<double>>(res.at(0));
+    //     // std::cout << "torque : " << torque << std::endl;
+
+    //     // Compute current
+    //     std::vector<double> current;
+    //     current.reserve(torque.size());
+
+    //     // Multiply corresponding elements of vec1 and vec2 and store the result in result vector
+    //     for (size_t i = 0; i < torque.size(); ++i)
+    //     {
+    //         // current.push_back(torque[i] * ratios[i]);
+    //         // current.push_back(torque[i]);
+    //         // current[i] = torque[i] * ratios[i];
+    //         current[i] = torque[i];
+    //     }
+
+    //     // std::cout << "current : " << current << std::endl;
+
+    //     // std::vector<double> result = current;
+
+    //     return current;
+    // }
+
+    std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> CasadiKinDyn::Impl::cartesianImpedance()
     {
         x_e = {0.0, 0.0, 0.0};
 
@@ -887,10 +1023,6 @@ namespace casadi_kin_dyn
         {
             error.push_back(target_x[i] - current_x[i]);
         }
-
-        // std::cout << "target_x : " << target_x << std::endl;
-        // std::cout << "current_x : " << current_x << std::endl;
-        // std::cout << "error : " << error << std::endl;
 
         // Compute magnitude of error
         double magnitude = std::sqrt(std::pow(error[0], 2) + std::pow(error[1], 2) + std::pow(error[2], 2));
@@ -918,14 +1050,11 @@ namespace casadi_kin_dyn
 
         std::vector<double> current_dx = static_cast<std::vector<double>>(res.at(0));
 
-        // Compute dx_e¥
+        // Compute dx_e
         for (size_t i = 0; i < dx_e.size(); ++i)
         {
             dx_e[i] = dx_d[i] - current_dx[i];
         }
-        // std::cout << "dx_d : " << dx_d << std::endl;
-        // std::cout << "current_dx : " << current_dx << std::endl;
-        // std::cout << "dx_e : " << dx_e << std::endl;
 
         // Compute force
         // Check if dimensions of Kd and Dd match expected dimensions
@@ -964,26 +1093,21 @@ namespace casadi_kin_dyn
         res = T(arg_T);
 
         std::vector<double> torque = static_cast<std::vector<double>>(res.at(0));
-        // std::cout << "torque : " << torque << std::endl;
 
         // Compute current
         std::vector<double> current;
         current.reserve(torque.size());
 
-        // Multiply corresponding elements of vec1 and vec2 and store the result in result vector
         for (size_t i = 0; i < torque.size(); ++i)
         {
-            //current.push_back(torque[i] * ratios[i]);
-            //current.push_back(torque[i]);
-            //current[i] = torque[i] * ratios[i];
-            current[i] = torque[i];
+            current.push_back(torque[i]);
         }
 
-        // std::cout << "current : " << current << std::endl;
+        // Return both error and current
+        // return std::make_pair(error, current);
 
-        // std::vector<double> result = current;
-
-        return current;
+        // Return error, current, and force as a tuple
+        return std::make_tuple(error, current, force);
     }
 
     std::vector<double> CasadiKinDyn::Impl::compensateFrictionInMovingDirection()
@@ -1394,9 +1518,22 @@ namespace casadi_kin_dyn
 
         std::vector<double> N_result = static_cast<std::vector<double>>(res.at(0));
 
-        // Compute current
-        std::vector<double> result;
-        result.reserve(current.size());
+        // std::cout << "N_result: " << N_result << std::endl;
+        // std::cout << "N result (0): " << res.at(0) << std::endl;
+
+        // Reshape vector into 6x6 matrix
+        Eigen::MatrixXd N_matrix(6, 6);
+        for (int i = 0; i < 6; ++i)
+        {
+            for (int j = 0; j < 6; ++j)
+            {
+                N_matrix(i, j) = N_result[j * 6 + i];
+            }
+        }
+        // std::cout << "N_matrix: " << N_matrix << std::endl;
+
+        std::vector<double> result_before;
+        result_before.reserve(current.size());
 
         // Multiply corresponding elements of vec1 and vec2 and store the result in result vector
         for (size_t i = 0; i < current.size(); ++i)
@@ -1404,8 +1541,25 @@ namespace casadi_kin_dyn
             // current.push_back(torque[i] * ratios[i]);
             // result.push_back(N_result[i] * current[i]);
             current[i] = torque[i] * ratios[i];
-            result[i] = N_result[i] * current[i];
+            // result_before[i] = N_result[i] * current[i];
         }
+
+        // Convert std::vector to Eigen::VectorXd
+        Eigen::VectorXd vec(6);
+        for (int i = 0; i < 6; ++i)
+        {
+            vec(i) = current[i];
+        }
+
+        // Perform the multiplication
+        Eigen::VectorXd eig_result = N_matrix * vec;
+
+        // std::cout << "eig_result: " << eig_result << std::endl;
+
+        // Compute current
+        // std::vector<double> result;
+        // result.reserve(current.size());
+        std::vector<double> result(eig_result.data(), eig_result.data() + eig_result.size());
 
         return result;
     }
@@ -1481,7 +1635,195 @@ namespace casadi_kin_dyn
         return command;
     }
 
-    // CasadiKinDyn::Impl::double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
+    // Kinematics
+
+    std::vector<double> CasadiKinDyn::Impl::ComputeCLIK(std::vector<double> target_position)
+    {
+        auto model = _model_dbl.cast<Scalar>();
+        pinocchio::DataTpl<Scalar> data(model);
+        auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        // auto model = _model_dbl;
+        // pinocchio::Data data(model);
+        // auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        // // Compute expression for forward kinematics with Pinocchio
+        // Eigen::Matrix<Scalar, 6, -1> J_full;
+        // J_full.setZero(6, nv());
+
+        // pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
+        // pinocchio::framesForwardKinematics(model, data, cas_to_eig(_q));
+        // pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame(LOCAL_WORLD_ALIGNED), J_full); //"LOCAL" DEFAULT PINOCCHIO COMPUTATION
+
+        // Eigen::Matrix<Scalar, 6, 1> eig_vel = J_full * cas_to_eig(_qdot);
+
+        // auto ee_vel_linear = eig_to_cas(eig_vel.head(3));
+
+        // std::cout << "J_full: " << J_full << std::endl;
+
+        /////////////////////////////////////////////////////
+
+        // // Var for casadi function
+        // DM input_q = DM(_q);
+        // std::vector<DM> arg_j = {input_q};
+
+        // // return Jacobian;
+        // Function J = external("J");
+        // std::vector<DM> res = J(arg_j);
+        // // DM eig_vel = J(arg_j);
+
+        // // Eigen::Matrix<double, 3, 1> Jacobian = static_cast<Eigen::Matrix<double, 3, 1>>(res.at(0));
+
+        // std::vector<double> J_vector = static_cast<std::vector<double>>(res.at(0));
+
+        // // std::cout << "Jacobian: " << Jacobian << std::endl;
+
+        // // std::cout << "result (0): " << res.at(0) << std::endl;
+        // // std::cout << "result (1): " << res.at(1) << std::endl;
+
+        // // Reshape vector into 3x6 matrix
+        // Eigen::MatrixXd J_matrix(3, 6);
+        // for (int i = 0; i < 3; ++i)
+        // {
+        //     for (int j = 0; j < 6; ++j)
+        //     {
+        //         J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
+        //     }
+        // }
+
+        // std::cout << "J_matrix: " << J_matrix << std::endl;
+
+        ////////////////////////////////////////////////////////////////
+
+        // Define other necessary variables
+
+        Eigen::VectorXd qd = cas_to_eig(_q).cast<double>();
+        casadi::DM dm_qd = casadi::DM::zeros(qd.size());
+
+        Eigen::VectorXd v; // Assuming 'v' has the same size as the number of joints (6 in this case)
+        Eigen::Matrix<double, 3, 1> err;
+        // std::vector<double> error(target_position.size());;
+
+        bool success = false;
+
+        for (int i = 0;; i++)
+        {
+
+            for (int i = 0; i < qd.size(); ++i)
+            {
+                dm_qd(i) = qd(i);
+            }
+
+            // Compute error vector
+            DM input_q = DM(dm_qd);
+            std::vector<DM> arg_x = {input_q};
+            Function x = external("x");
+            std::vector<DM> res = x(arg_x);
+            std::vector<double> current_x = static_cast<std::vector<double>>(res.at(0));
+
+            // for (size_t i = 0; i < target_position.size(); ++i)
+            // {
+            //     error.push_back(target_position[i] - current_x[i]);
+            // }
+
+            // double norm = calculateNorm(error);
+
+            // Convert error vector to Eigen format
+            for (int i = 0; i < 3; ++i)
+            {
+                err(i) = target_position[i] - current_x[i];
+            }
+
+            std::cout << "_q = " << _q << std::endl;
+            std::cout << "qd = " << qd << std::endl;
+            std::cout << "dm_qd = " << dm_qd << std::endl;
+            std::cout << "target_position = " << target_position << std::endl;
+            std::cout << "current_x = " << current_x << std::endl;
+            // std::cout << "error = " << error << std::endl;
+            std::cout << "err = " << err.transpose() << std::endl;
+            std::cout << "norm = " << err.norm() << std::endl;
+
+            break;
+
+            if (err.norm() < eps)
+            {
+                success = true;
+                break;
+            }
+
+            if (i >= IT_MAX)
+            {
+                success = false;
+                break;
+            }
+
+            // Jacobian
+            // Var for casadi function
+            DM input_j = DM(dm_qd);
+            std::vector<DM> arg_j = {input_j};
+
+            // return Jacobian;
+            Function J = external("J");
+            std::vector<DM> res_j = J(arg_j);
+
+            std::vector<double> J_vector = static_cast<std::vector<double>>(res_j.at(0));
+
+            // Reshape vector into 3x6 matrix
+            Eigen::MatrixXd J_matrix(3, 6);
+            for (int i = 0; i < 3; ++i)
+            {
+                for (int j = 0; j < 6; ++j)
+                {
+                    J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
+                }
+            }
+
+            pinocchio::Data::Matrix3x JJt(3, 3); // JJt should be of size 3x3
+
+            // Compute JJt
+            JJt.noalias() = J_matrix * J_matrix.transpose();
+            JJt.diagonal().array() += damp;
+
+            // Compute velocity 'v'
+            v.noalias() = -J_matrix.transpose() * JJt.ldlt().solve(err);
+
+            // std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
+
+            Eigen::VectorXd v_i = v * DT;
+
+            // Update joint configuration 'q'
+            qd = pinocchio::integrate(model, cas_to_eig(dm_qd).cast<Scalar>(), v_i.cast<Scalar>()).cast<double>();
+
+            // Print error every 10 iterations
+            if (!(i % 10))
+            {
+                std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
+            }
+
+            // std::cout << "Current pos = " << current_x << std::endl;
+        }
+
+        if (success)
+        {
+            std::cout << "Convergence achieved!" << std::endl;
+        }
+        else
+        {
+            std::cout << "Warning: Iterative algorithm did not converge to desired precision." << std::endl;
+        }
+
+        std::cout << "Final result: Target pos = " << target_position << std::endl;
+
+        std::cout << "Final result: qd = " << qd.transpose() << std::endl;
+        std::cout << "Final error: err = " << err.transpose() << std::endl;
+
+        std::vector<double> result(qd.data(), qd.data() + qd.size());
+
+        return result;
+    }
+
+    // Function to calculate the Euclidean norm of a vector
+    // double calculateNorm(const std::vector<double> &vec)
     // {
     //     double sum = 0.0;
     //     for (double val : vec)
@@ -1490,6 +1832,16 @@ namespace casadi_kin_dyn
     //     }
     //     return std::sqrt(sum);
     // }
+
+    double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
+    {
+        double sum = 0.0;
+        for (double val : vec)
+        {
+            sum += val * val;
+        }
+        return std::sqrt(sum);
+    }
 
     // // Function to convert casadi::SX to std::vector<double>
     // std::vector<double> casadiSxToStdVector(const casadi::SX &sx)
@@ -1677,13 +2029,13 @@ namespace casadi_kin_dyn
         return impl().potentialEnergy();
     }
 
-    // Custom function
+    ///////////// Custom function
     std::vector<double> CasadiKinDyn::computeGravity()
     {
         return impl().computeGravity();
     }
 
-    std::vector<double> CasadiKinDyn::cartesianImpedance()
+    std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> CasadiKinDyn::cartesianImpedance()
     {
         return impl().cartesianImpedance();
     }
@@ -1711,6 +2063,11 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::CommandBase()
     {
         return impl().CommandBase();
+    }
+
+    std::vector<double> CasadiKinDyn::ComputeCLIK(std::vector<double> target_position)
+    {
+        return impl().ComputeCLIK(target_position);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
