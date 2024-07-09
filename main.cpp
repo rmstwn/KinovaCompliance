@@ -716,11 +716,11 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
         // Set last actuator in torque mode now that the command is equal to measure
         auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-        control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::CURRENT);
+        control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
 
-        // // Set to Current Mode
-        // for (int actuator_id = 1; actuator_id < 6; actuator_id++)
-        //     actuator_config->SetControlMode(control_mode_message, actuator_id);
+        // Set to Current Mode
+        for (int actuator_id = 1; actuator_id < 6; actuator_id++)
+            actuator_config->SetControlMode(control_mode_message, actuator_id);
 
         const std::vector<double> joint_currents_limits{9.2538, 2.7666, 9.2538, 17.1666, 18.3357, 17.7516};
 
@@ -848,7 +848,12 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // std::vector<double>
             // Inverse Kinematics
             kin_dyn.set_q(jntPositions);
-            JointPositionIK = kin_dyn.ComputeCLIK({0.377, 0.0, 0.609});
+            JointPositionIK = kin_dyn.ComputeCLIK({0.6, 0.0, 0.609});
+
+            for (int i = 0; i < actuator_count; i++)
+            {
+                JointPositionIK[i] = RAD_TO_DEG(JointPositionIK[i]);
+            }
 
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
@@ -926,11 +931,11 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     base_command.mutable_actuators(i)->set_current_motor(currentCommand[i]);
             // }
 
-            // for (int i = 0; i < actuator_count; i++)
-            // {
-            //     base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
-            //     base_command.mutable_actuators(i)->set_position(RAD_TO_DEG(JointPositionIK[i]));
-            // }
+            for (int i = 0; i < actuator_count; i++)
+            {
+                // base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
+                base_command.mutable_actuators(i)->set_position(JointPositionIK[i]);
+            }
 
             // CommandData base;
             // for (int i = 0; i < 4; i++)
@@ -938,25 +943,19 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     base.basecommand.push_back(BaseCommand[i]);
             // }
 
-            // // Lock the queue and push the feedback data
-            // {
-            //     std::lock_guard<std::mutex> lock(queueMutex);
-            //     commandQueue.push(base);
-            // }
-            // // Notify the condition variable to wake up the other thread
-            // queueCondition.notify_one();
-
             // Base command send
             // mobile.Move();
             // // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
             // mobile.SendRefVelocities(static_cast<float>(-BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
             // std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
-            {
-                mobile.Move();
-                mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-                UpdateBaseCommandTime = sc::steady_clock::now();
-            }
+
+            // // Base command send
+            // if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
+            // {
+            //     mobile.Move();
+            //     mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+            //     UpdateBaseCommandTime = sc::steady_clock::now();
+            // }
 
             // Incrementing identifier ensures actuators can reject out of time frames
             // base_command.set_frame_id(base_command.frame_id() + 1);
@@ -989,6 +988,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // Enforce the constant loop time and count how many times the loop was late
             if (waitMicroSeconds(loopStartTime, LOOP_DURATION) != 0)
                 slowLoopCount++;
+
+            break;
         }
         // // Mobile
         mobile.Move();
