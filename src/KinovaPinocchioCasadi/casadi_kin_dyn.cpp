@@ -169,6 +169,12 @@ namespace casadi_kin_dyn
         const int IT_MAX = 1000;
         const double DT = 1e-1;
         const double damp = 1e-6;
+
+        // CLIK parameters
+        double tolerance = 0.01;
+        int max_iterations = 1000;
+        double alpha = 0.1;  // Learning rate
+        double lambda = 0.1; // Damping factor
     };
 
     // CasadiKinDyn::Impl::Impl(urdf::ModelInterfaceSharedPtr urdf_model)
@@ -1637,190 +1643,207 @@ namespace casadi_kin_dyn
 
     // Kinematics
 
-    std::vector<double> CasadiKinDyn::Impl::ComputeCLIK(std::vector<double> target_position)
-    {
-        auto model = _model_dbl.cast<Scalar>();
-        pinocchio::DataTpl<Scalar> data(model);
-        auto frame_idx = model.getFrameId("END_EFFECTOR");
+    // std::vector<double> CasadiKinDyn::Impl::ComputeCLIK(std::vector<double> target_position)
+    // {
+    //     // auto model = _model_dbl.cast<Scalar>();
+    //     // pinocchio::DataTpl<Scalar> data(model);
+    //     // auto frame_idx = model.getFrameId("END_EFFECTOR");
 
-        // auto model = _model_dbl;
-        // pinocchio::Data data(model);
-        // auto frame_idx = model.getFrameId("END_EFFECTOR");
+    //     auto model = _model_dbl;
+    //     pinocchio::Data data(model);
+    //     auto frame_idx = model.getFrameId("END_EFFECTOR");
 
-        // // Compute expression for forward kinematics with Pinocchio
-        // Eigen::Matrix<Scalar, 6, -1> J_full;
-        // J_full.setZero(6, nv());
+    //     // // Compute expression for forward kinematics with Pinocchio
+    //     // Eigen::Matrix<Scalar, 6, -1> J_full;
+    //     // J_full.setZero(6, nv());
 
-        // pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
-        // pinocchio::framesForwardKinematics(model, data, cas_to_eig(_q));
-        // pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame(LOCAL_WORLD_ALIGNED), J_full); //"LOCAL" DEFAULT PINOCCHIO COMPUTATION
+    //     // pinocchio::computeJointJacobians(model, data, cas_to_eig(_q));
+    //     // pinocchio::framesForwardKinematics(model, data, cas_to_eig(_q));
+    //     // pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame(LOCAL_WORLD_ALIGNED), J_full); //"LOCAL" DEFAULT PINOCCHIO COMPUTATION
 
-        // Eigen::Matrix<Scalar, 6, 1> eig_vel = J_full * cas_to_eig(_qdot);
+    //     // Eigen::Matrix<Scalar, 6, 1> eig_vel = J_full * cas_to_eig(_qdot);
 
-        // auto ee_vel_linear = eig_to_cas(eig_vel.head(3));
+    //     // auto ee_vel_linear = eig_to_cas(eig_vel.head(3));
 
-        // std::cout << "J_full: " << J_full << std::endl;
+    //     // std::cout << "J_full: " << J_full << std::endl;
 
-        /////////////////////////////////////////////////////
+    //     /////////////////////////////////////////////////////
 
-        // // Var for casadi function
-        // DM input_q = DM(_q);
-        // std::vector<DM> arg_j = {input_q};
+    //     // // Var for casadi function
+    //     // DM input_q = DM(_q);
+    //     // std::vector<DM> arg_j = {input_q};
 
-        // // return Jacobian;
-        // Function J = external("J");
-        // std::vector<DM> res = J(arg_j);
-        // // DM eig_vel = J(arg_j);
+    //     // // return Jacobian;
+    //     // Function J = external("J");
+    //     // std::vector<DM> res = J(arg_j);
+    //     // // DM eig_vel = J(arg_j);
 
-        // // Eigen::Matrix<double, 3, 1> Jacobian = static_cast<Eigen::Matrix<double, 3, 1>>(res.at(0));
+    //     // // Eigen::Matrix<double, 3, 1> Jacobian = static_cast<Eigen::Matrix<double, 3, 1>>(res.at(0));
 
-        // std::vector<double> J_vector = static_cast<std::vector<double>>(res.at(0));
+    //     // std::vector<double> J_vector = static_cast<std::vector<double>>(res.at(0));
 
-        // // std::cout << "Jacobian: " << Jacobian << std::endl;
+    //     // // std::cout << "Jacobian: " << Jacobian << std::endl;
 
-        // // std::cout << "result (0): " << res.at(0) << std::endl;
-        // // std::cout << "result (1): " << res.at(1) << std::endl;
+    //     // // std::cout << "result (0): " << res.at(0) << std::endl;
+    //     // // std::cout << "result (1): " << res.at(1) << std::endl;
 
-        // // Reshape vector into 3x6 matrix
-        // Eigen::MatrixXd J_matrix(3, 6);
-        // for (int i = 0; i < 3; ++i)
-        // {
-        //     for (int j = 0; j < 6; ++j)
-        //     {
-        //         J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
-        //     }
-        // }
+    //     // // Reshape vector into 3x6 matrix
+    //     // Eigen::MatrixXd J_matrix(3, 6);
+    //     // for (int i = 0; i < 3; ++i)
+    //     // {
+    //     //     for (int j = 0; j < 6; ++j)
+    //     //     {
+    //     //         J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
+    //     //     }
+    //     // }
 
-        // std::cout << "J_matrix: " << J_matrix << std::endl;
+    //     // std::cout << "J_matrix: " << J_matrix << std::endl;
 
-        ////////////////////////////////////////////////////////////////
+    //     ////////////////////////////////////////////////////////////////
 
-        // Define other necessary variables
+    //     // Define other necessary variables
 
-        Eigen::VectorXd qd = cas_to_eig(_q).cast<double>();
-        casadi::DM dm_qd = casadi::DM::zeros(qd.size());
+    //     const pinocchio::SE3 oMdes(Eigen::Matrix3d::Identity(), Eigen::Vector3d(0.6, 0., 0.7));
 
-        Eigen::VectorXd v; // Assuming 'v' has the same size as the number of joints (6 in this case)
-        Eigen::Matrix<double, 3, 1> err;
-        // std::vector<double> error(target_position.size());;
+    //     pinocchio::Data::Matrix6x J(6, model.nv);
+    //     J.setZero();
 
-        bool success = false;
+    //     Eigen::VectorXd v; // Assuming 'v' has the same size as the number of joints (6 in this case)
+    //     Eigen::Matrix<double, 6, 1> err;
 
-        for (int i = 0;; i++)
-        {
+    //     Eigen::VectorXd q = cas_to_eig(_q).cast<double>();
+    //     casadi::DM dm_q = casadi::DM::zeros(q.size());
 
-            for (int i = 0; i < qd.size(); ++i)
-            {
-                dm_qd(i) = qd(i);
-            }
+    //     bool success = false;
 
-            // Compute error vector
-            DM input_q = DM(dm_qd);
-            std::vector<DM> arg_x = {input_q};
-            Function x = external("x");
-            std::vector<DM> res = x(arg_x);
-            std::vector<double> current_x = static_cast<std::vector<double>>(res.at(0));
+    //     for (int i = 0;; i++)
+    //     {
 
-            // for (size_t i = 0; i < target_position.size(); ++i)
-            // {
-            //     error.push_back(target_position[i] - current_x[i]);
-            // }
+    //         // for (int i = 0; i < q.size(); ++i)
+    //         // {
+    //         //     dm_q(i) = q(i);
+    //         // }
 
-            // double norm = calculateNorm(error);
+    //         // // Compute error vector
+    //         // DM input_q = DM(dm_q);
+    //         // std::vector<DM> arg_x = {input_q};
+    //         // Function x = external("x");
+    //         // std::vector<DM> res = x(arg_x);
+    //         // std::vector<double> current_x = static_cast<std::vector<double>>(res.at(0));
 
-            // Convert error vector to Eigen format
-            for (int i = 0; i < 3; ++i)
-            {
-                err(i) = target_position[i] - current_x[i];
-            }
+    //         // double norm = calculateNorm(error);
 
-            std::cout << "_q = " << _q << std::endl;
-            std::cout << "qd = " << qd << std::endl;
-            std::cout << "dm_qd = " << dm_qd << std::endl;
-            std::cout << "target_position = " << target_position << std::endl;
-            std::cout << "current_x = " << current_x << std::endl;
-            // std::cout << "error = " << error << std::endl;
-            std::cout << "err = " << err.transpose() << std::endl;
-            std::cout << "norm = " << err.norm() << std::endl;
+    //         // // Convert error vector to Eigen format
+    //         // for (int i = 0; i < 3; ++i)
+    //         // {
+    //         //     err(i) = target_position[i] - current_x[i];
+    //         // }
 
-            break;
+    //         // for (int i = 3; i < 6; ++i)
+    //         // {
+    //         //     err(i) = 0;
+    //         // }
 
-            if (err.norm() < eps)
-            {
-                success = true;
-                break;
-            }
+    //         // pinocchio::forwardKinematics(model, data, q);
+    //         pinocchio::framesForwardKinematics(model, data, q);
 
-            if (i >= IT_MAX)
-            {
-                success = false;
-                break;
-            }
+    //         const pinocchio::SE3 dMf = oMdes.actInv(data.oMf.at(frame_idx));
+    //         err = pinocchio::log6(dMf).toVector();
 
-            // Jacobian
-            // Var for casadi function
-            DM input_j = DM(dm_qd);
-            std::vector<DM> arg_j = {input_j};
+    //         std::cout << "_q = " << _q << std::endl;
+    //         std::cout << "q = " << q << std::endl;
+    //         std::cout << "target_pos = " << oMdes << std::endl;
+    //         std::cout << "current_pos = " << data.oMf.at(frame_idx) << std::endl;
+    //         // std::cout << "error = " << error << std::endl;
+    //         std::cout << "err = " << err.transpose() << std::endl;
+    //         std::cout << "norm = " << err.norm() << std::endl;
 
-            // return Jacobian;
-            Function J = external("J");
-            std::vector<DM> res_j = J(arg_j);
+    //         // break;
 
-            std::vector<double> J_vector = static_cast<std::vector<double>>(res_j.at(0));
+    //         if (err.norm() < eps)
+    //         {
+    //             success = true;
+    //             break;
+    //         }
 
-            // Reshape vector into 3x6 matrix
-            Eigen::MatrixXd J_matrix(3, 6);
-            for (int i = 0; i < 3; ++i)
-            {
-                for (int j = 0; j < 6; ++j)
-                {
-                    J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
-                }
-            }
+    //         if (i >= IT_MAX)
+    //         {
+    //             success = false;
+    //             break;
+    //         }
 
-            pinocchio::Data::Matrix3x JJt(3, 3); // JJt should be of size 3x3
+    //         // // Jacobian
+    //         // // Var for casadi function
+    //         // DM input_j = DM(dm_qd);
+    //         // std::vector<DM> arg_j = {input_j};
 
-            // Compute JJt
-            JJt.noalias() = J_matrix * J_matrix.transpose();
-            JJt.diagonal().array() += damp;
+    //         // // return Jacobian;
+    //         // Function J = external("J");
+    //         // std::vector<DM> res_j = J(arg_j);
 
-            // Compute velocity 'v'
-            v.noalias() = -J_matrix.transpose() * JJt.ldlt().solve(err);
+    //         // std::vector<double> J_vector = static_cast<std::vector<double>>(res_j.at(0));
 
-            // std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
+    //         // // Reshape vector into 3x6 matrix
+    //         // for (int i = 0; i < 3; ++i)
+    //         // {
+    //         //     for (int j = 0; j < 6; ++j)
+    //         //     {
+    //         //         J_matrix(i, j) = J_vector[i * 6 + j]; // Adjust indexing for the new shape
+    //         //     }
+    //         // }
 
-            Eigen::VectorXd v_i = v * DT;
+    //         // Jacobian
 
-            // Update joint configuration 'q'
-            qd = pinocchio::integrate(model, cas_to_eig(dm_qd).cast<Scalar>(), v_i.cast<Scalar>()).cast<double>();
+    //         pinocchio::computeJointJacobians(model, data, cas_to_eig(_q).cast<double>());
+    //         pinocchio::getFrameJacobian(model, data, frame_idx, pinocchio::ReferenceFrame(LOCAL_WORLD_ALIGNED), J); //"LOCAL" DEFAULT PINOCCHIO COMPUTATION
 
-            // Print error every 10 iterations
-            if (!(i % 10))
-            {
-                std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
-            }
+    //         pinocchio::Data::Matrix6 JJt;
 
-            // std::cout << "Current pos = " << current_x << std::endl;
-        }
+    //         // Compute JJt
+    //         JJt.noalias() = J * J.transpose();
+    //         JJt.diagonal().array() += damp;
 
-        if (success)
-        {
-            std::cout << "Convergence achieved!" << std::endl;
-        }
-        else
-        {
-            std::cout << "Warning: Iterative algorithm did not converge to desired precision." << std::endl;
-        }
+    //         // Compute velocity 'v'
+    //         v.noalias() = -J.transpose() * JJt.ldlt().solve(err);
 
-        std::cout << "Final result: Target pos = " << target_position << std::endl;
+    //         // std::cout << "J = " << J << std::endl;
 
-        std::cout << "Final result: qd = " << qd.transpose() << std::endl;
-        std::cout << "Final error: err = " << err.transpose() << std::endl;
+    //         // std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
 
-        std::vector<double> result(qd.data(), qd.data() + qd.size());
+    //         Eigen::VectorXd v_i = v * DT;
 
-        return result;
-    }
+    //         // Update joint configuration 'q'
+    //         // q = pinocchio::integrate(model.cast<Scalar>(), cas_to_eig(dm_q).cast<Scalar>(), v_i.cast<Scalar>()).cast<double>();
+
+    //         q = pinocchio::integrate(model, q, v * DT);
+
+    //         // Print error every 10 iterations
+    //         if (!(i % 10))
+    //         {
+    //             std::cout << "Iteration " << i << ": Error = " << err.transpose() << std::endl;
+    //         }
+
+    //         // std::cout << "Current pos = " << current_x << std::endl;
+    //         // break;
+    //     }
+
+    //     if (success)
+    //     {
+    //         std::cout << "Convergence achieved!" << std::endl;
+    //     }
+    //     else
+    //     {
+    //         std::cout << "Warning: Iterative algorithm did not converge to desired precision." << std::endl;
+    //     }
+
+    //     std::cout << "Final result: Target pos = " << oMdes << std::endl;
+    //     std::cout << "Final result: q = " << q.transpose() << std::endl;
+    //     std::cout << "Final error: err = " << err.transpose() << std::endl;
+
+    //     std::vector<double> result(q.data(), q.data() + q.size());
+
+    //     return result;
+    // }
 
     // Function to calculate the Euclidean norm of a vector
     // double calculateNorm(const std::vector<double> &vec)
@@ -1832,6 +1855,94 @@ namespace casadi_kin_dyn
     //     }
     //     return std::sqrt(sum);
     // }
+
+    const double PI = 3.14159265358979323846;
+
+    Eigen::VectorXd degreesToRadians(const Eigen::VectorXd &degrees)
+    {
+        return degrees * PI / 180.0;
+    }
+
+    std::vector<double> CasadiKinDyn::Impl::ComputeCLIK(std::vector<double> target_position)
+    {
+        // auto model = _model_dbl.cast<Scalar>();
+        // pinocchio::DataTpl<Scalar> data(model);
+        // auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        auto model = _model_dbl;
+        pinocchio::Data data(model);
+        auto frame_idx = model.getFrameId("END_EFFECTOR");
+
+        Eigen::VectorXd q = degreesToRadians(Eigen::VectorXd::Zero(model.nq));
+
+        Eigen::Vector3d desired_position;
+
+        for (int i = 0; i < 3; ++i)
+        {
+            desired_position(i) = target_position[i];
+        }
+
+        q = cas_to_eig(_q).cast<double>();
+
+        for (int i = 0; i < max_iterations; ++i)
+        {
+            // Compute the forward kinematics
+            pinocchio::forwardKinematics(model, data, q);
+            pinocchio::updateFramePlacements(model, data);
+
+            // Current end-effector position
+            Eigen::Vector3d current_position = data.oMf[frame_idx].translation();
+
+            // Compute the position error
+            Eigen::Vector3d position_error = desired_position - current_position;
+            double error = position_error.norm();
+
+            // Check if the error is within the tolerance
+            if (error < tolerance)
+            {
+                std::cout << "Converged in " << i << " iterations.\n";
+                break;
+            }
+
+            // Compute the Jacobian matrix
+            pinocchio::Data::Matrix6x J(6, model.nv);
+            J.setZero();
+
+            pinocchio::computeFrameJacobian(model, data, q, frame_idx, J);
+            // cout << "J " << J << endl;
+
+            // Take the top 3 rows of the Jacobian for position control
+            Eigen::MatrixXd J_pos = J.topRows<3>();
+            // cout << "J_pos " << J_pos << endl;
+
+            Eigen::MatrixXd JJt = J_pos * J_pos.transpose();
+            // cout << "JJt " << JJt << endl;
+
+            // Compute the damped pseudo-inverse of the Jacobian
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(JJt.rows(), JJt.cols());
+            // cout << "I " << I << endl;
+
+            Eigen::MatrixXd J_damped_pinv = J_pos.transpose() * (JJt + lambda * lambda * I).inverse();
+            // cout << "J_damped_pinv" << J_damped_pinv << endl;
+
+            // Compute the change in joint angles
+            Eigen::VectorXd delta_theta = J_damped_pinv * position_error;
+
+            // Update the joint angles
+            q += alpha * delta_theta;
+
+            if (i == max_iterations - 1)
+            {
+                std::cout << "Reached maximum iterations.\n";
+            }
+
+            cout << "error " << error << endl;
+        }
+
+        std::vector<double> result(q.data(), q.data() + q.size());
+
+        return result;
+    }
 
     double CasadiKinDyn::Impl::calculateNorm(const std::vector<double> &vec)
     {
