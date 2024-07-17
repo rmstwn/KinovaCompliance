@@ -93,6 +93,8 @@ namespace casadi_kin_dyn
 
         void set_targetx();
 
+        std::vector<double> get_pos();
+
     private:
         typedef casadi::SX Scalar;
         typedef Eigen::Matrix<Scalar, -1, 1> VectorXs;
@@ -1954,6 +1956,22 @@ namespace casadi_kin_dyn
         return std::sqrt(sum);
     }
 
+    std::vector<double> CasadiKinDyn::Impl::get_pos()
+    {
+
+        // Var for casadi function
+        DM input_q = DM(_q);
+        std::vector<DM> arg_x = {input_q};
+
+        // return pos x;
+        Function x = external("x");
+        std::vector<DM> res = x(arg_x);
+
+        std::vector<double> posEE = static_cast<std::vector<double>>(res.at(0));
+
+        return posEE;
+    }
+
     // // Function to convert casadi::SX to std::vector<double>
     // std::vector<double> casadiSxToStdVector(const casadi::SX &sx)
     // {
@@ -2179,6 +2197,11 @@ namespace casadi_kin_dyn
     std::vector<double> CasadiKinDyn::ComputeCLIK(std::vector<double> target_position)
     {
         return impl().ComputeCLIK(target_position);
+    }
+
+    std::vector<double> CasadiKinDyn::get_pos()
+    {
+        return impl().get_pos();
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////

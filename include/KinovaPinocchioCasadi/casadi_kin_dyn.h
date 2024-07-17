@@ -64,6 +64,8 @@ namespace casadi_kin_dyn
     std::vector<double> q_max() const;
     std::vector<std::string> joint_names() const;
 
+    std::vector<double> get_pos();
+
     void set_q(const std::vector<double> &joint_positions);
     void set_qdot(const std::vector<double> &joint_velocities);
     void set_qddot(const std::vector<double> &joint_velocities);
