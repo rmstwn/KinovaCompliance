@@ -782,7 +782,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // if (jntPositions[5] > DEG_TO_RAD(180.0))
             //     jntPositions[5] = jntPositions[5] - DEG_TO_RAD(360.0);
 
-            std::cout << "Pos before: " << jntPositions << std::endl;
+            // std::cout << "Pos before: " << jntPositions << std::endl;
 
             // Create Position instances
             std::vector<Position> positions;
@@ -824,28 +824,28 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Compensate friction in Velocity and Current direction
-            // kin_dyn.set_current(jntCurrents);
-            // ComTotalFrictionDir = kin_dyn.compensateFrictionInImpedanceMode(jntCurrents);
+            kin_dyn.set_current(jntCurrents);
+            ComTotalFrictionDir = kin_dyn.compensateFrictionInImpedanceMode(jntCurrents);
 
             // Return the current due to cartesian impedance
             // currentImpCommand = kin_dyn.cartesianImpedance();
 
             // std::pair<std::vector<double>, std::vector<double>> result = kin_dyn.cartesianImpedance();
-            // result = kin_dyn.cartesianImpedance();
+            result = kin_dyn.cartesianImpedance();
 
             // // Retrieve error and current from the pair
             // errorPos = result.first;
             // currentImpCommand = result.second;
 
             // Retrieve error, current, and force from the tuple
-            // errorPos = std::get<0>(result);
-            // currentImpCommand = std::get<1>(result);
-            // force = std::get<2>(result);
+            errorPos = std::get<0>(result);
+            currentImpCommand = std::get<1>(result);
+            force = std::get<2>(result);
 
-            // // Null Space
+            // Null Space
             // kin_dyn.set_q(jntPositions);
             // kin_dyn.set_qdot(jntVelocities);
-            // ComNullSpace = kin_dyn.NullSpaceTask();
+            ComNullSpace = kin_dyn.NullSpaceTask();
 
             // std::vector<double>
             // Inverse Kinematics
@@ -858,17 +858,17 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Get EE Pos
-            kin_dyn.set_q(jntPositions);
+            // kin_dyn.set_q(jntPositions);
             currentPos = kin_dyn.get_pos();
 
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
             {
                 // currentCommand[i] = currentGravityCommand[i];
-                currentCommand[i] = currentGravityCommand[i] + ComFrictionVelDir[i];
+                // currentCommand[i] = currentGravityCommand[i] + ComFrictionVelDir[i];
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
                 // currentCommand[i] = currentGravityCommand[i] + ComTotalFrictionDir[i] + currentImpCommand[i];
-                // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
+                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
                 // currentCommand[i] = currentCommand[i] + ComNullSpace[i];
                 // currentCommand[i] = ((currentImpCommand[i] + currentGravityCommand[i]) + ComTotalFrictionDir[i]) + ComNullSpace[i];
             }
@@ -880,7 +880,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Mobile base
-            // BaseCommand = kin_dyn.CommandBase();
+            BaseCommand = kin_dyn.CommandBase();
 
             std::cout << "------------------------------------------------------" << std::endl;
             // std::cout << "gravity : " << TorqueGravity << std::endl;
@@ -900,22 +900,22 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
             // ------------------------------- save data -----------------------
 
-            SaveData << iterationCount << ","
-                     << (double)currentPos[0] << ","
-                     << (double)currentPos[1] << ","
-                     << (double)currentPos[2] << ","
-                     << (double)jntCurrents[0] << ","
-                     << (double)jntCurrents[1] << ","
-                     << (double)jntCurrents[2] << ","
-                     << (double)jntCurrents[3] << ","
-                     << (double)jntCurrents[4] << ","
-                     << (double)jntCurrents[5] << ","
-                     << (double)currentCommand[0] << ","
-                     << (double)currentCommand[1] << ","
-                     << (double)currentCommand[2] << ","
-                     << (double)currentCommand[3] << ","
-                     << (double)currentCommand[4] << ","
-                     << (double)currentCommand[5] << std::endl;
+            // SaveData << iterationCount << ","
+            //          << (double)currentPos[0] << ","
+            //          << (double)currentPos[1] << ","
+            //          << (double)currentPos[2] << ","
+            //          << (double)jntCurrents[0] << ","
+            //          << (double)jntCurrents[1] << ","
+            //          << (double)jntCurrents[2] << ","
+            //          << (double)jntCurrents[3] << ","
+            //          << (double)jntCurrents[4] << ","
+            //          << (double)jntCurrents[5] << ","
+            //          << (double)currentCommand[0] << ","
+            //          << (double)currentCommand[1] << ","
+            //          << (double)currentCommand[2] << ","
+            //          << (double)currentCommand[3] << ","
+            //          << (double)currentCommand[4] << ","
+            //          << (double)currentCommand[5] << std::endl;
 
             // SaveData << iterationCount << ","
             //          << (double)errorPos[0] << ","
@@ -963,18 +963,12 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // }
 
             // Base command send
-            // mobile.Move();
-            // // mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(0));
-            // mobile.SendRefVelocities(static_cast<float>(-BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-            // std::this_thread::sleep_for(std::chrono::milliseconds(5));
-
-            // // Base command send
-            // if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
-            // {
-            //     mobile.Move();
-            //     mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-            //     UpdateBaseCommandTime = sc::steady_clock::now();
-            // }
+            if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
+            {
+                mobile.Move();
+                mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+                UpdateBaseCommandTime = sc::steady_clock::now();
+            }
 
             // Incrementing identifier ensures actuators can reject out of time frames
             base_command.set_frame_id(base_command.frame_id() + 1);
