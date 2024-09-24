@@ -1125,7 +1125,7 @@ namespace casadi_kin_dyn
         // std::cout << "frictions : " << frictions << std::endl;
 
         // // Check if sizes match
-        // if (_qdot.size1() != frictions.size())
+        // if (_qdot.size1() != frictoins.size())
         // {
         //     std::cerr << "Sizes of _qdot and frictions do not match." << std::endl;
         //     return std::vector<double>();

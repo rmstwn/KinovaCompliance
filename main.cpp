@@ -66,7 +66,6 @@
 #include "KinovaPinocchioCasadi/casadi_kin_dyn.h"
 
 // Kinova Control Lib
-
 #include "KinovaControl/state.hpp"
 
 namespace k_api = Kinova::Api;
@@ -128,32 +127,6 @@ private:
     double prev_error_;
     double integral_;
 };
-
-void saveVectorsToFile(const std::vector<double> &jntCurrents, const std::vector<double> &jntTorque, std::ofstream &outFile)
-{
-    // Check if the file is open
-    if (!outFile.is_open())
-    {
-        std::cerr << "Error: Could not open the file for writing!" << std::endl;
-        return;
-    }
-
-    // Write the contents of jntCurrents to the file
-    outFile << "jntCurrents:\n";
-    for (const auto &current : jntCurrents)
-    {
-        outFile << current << "\n";
-    }
-
-    // Write the contents of jntTorque to the file
-    outFile << "jntTorque:\n";
-    for (const auto &torque : jntTorque)
-    {
-        outFile << torque << "\n";
-    }
-
-    outFile << "--------------------------\n";
-}
 
 /*****************************
  * Example related function *
@@ -512,28 +485,6 @@ bool move_to_pref_position(k_api::Base::BaseClient *base)
     return success;
 }
 
-std::vector<double> multiplyVectors(const std::vector<double> &vec1, const std::vector<double> &vec2)
-{
-    std::vector<double> result(vec1.size());
-    std::transform(vec1.begin(), vec1.end(), vec2.begin(), result.begin(), std::multiplies<double>());
-    return result;
-}
-
-// Overload the += operator for std::vector<float>
-std::vector<double> &operator+=(std::vector<double> &lhs, const std::vector<double> &rhs)
-{
-    // Ensure both vectors have the same size
-    if (lhs.size() != rhs.size())
-    {
-        throw std::invalid_argument("Vectors have different sizes");
-    }
-
-    // Perform element-wise addition
-    std::transform(lhs.begin(), lhs.end(), rhs.begin(), lhs.begin(), std::plus<double>());
-
-    return lhs;
-}
-
 // std::vector<double> ratios = {1.0282, 0.3574, 1.0282, 1.9074, 2.0373, 1.9724};
 
 // Function for dynamic calculations
@@ -879,8 +830,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     pidOutput[i] = pidControllers[i].compute(currentCommand[i], jntCurrents[i], dt);
             // }
 
-            // Mobile base
-            BaseCommand = kin_dyn.CommandBase();
+            // // Mobile base
+            // BaseCommand = kin_dyn.CommandBase();
 
             std::cout << "------------------------------------------------------" << std::endl;
             // std::cout << "gravity : " << TorqueGravity << std::endl;
@@ -962,13 +913,13 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             //     base.basecommand.push_back(BaseCommand[i]);
             // }
 
-            // Base command send
-            if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
-            {
-                mobile.Move();
-                mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
-                UpdateBaseCommandTime = sc::steady_clock::now();
-            }
+            // // Mobile Base command send
+            // if (BaseCommandTimeDelay > COMMAND_BASE_TIME)
+            // {
+            //     mobile.Move();
+            //     mobile.SendRefVelocities(static_cast<float>(BaseCommand[0]), static_cast<float>(BaseCommand[1]), static_cast<float>(BaseCommand[2]));
+            //     UpdateBaseCommandTime = sc::steady_clock::now();
+            // }
 
             // Incrementing identifier ensures actuators can reject out of time frames
             base_command.set_frame_id(base_command.frame_id() + 1);
@@ -1004,11 +955,12 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
 
             // break;
         }
+
         // // Mobile
-        mobile.Move();
-        mobile.SendRefVelocities(0, 0, 0);
-        mobile.Stop();
-        mobile.CloseInterface();
+        // mobile.Move();
+        // mobile.SendRefVelocities(0, 0, 0);
+        // mobile.Stop();
+        // mobile.CloseInterface();
 
         // baseCommadThread.join();
 
