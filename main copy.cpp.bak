@@ -1,28 +1,19 @@
-// #include <CppLinuxSerial/SerialPort.hpp>
+/*
+ * KINOVA (R) KORTEX (TM)
+ *
+ * Copyright (c) 2018 Kinova inc. All rights reserved.
+ *
+ * This software may be modified and distributed
+ * under the terms of the BSD 3-Clause license.
+ *
+ * Refer to the LICENSE file for details.
+ *
+ */
 
-// using namespace mn::CppLinuxSerial;
-
-// C library headers
-#include <stdio.h>
-#include <string.h>
-
-// Linux headers
-#include <fcntl.h>   // Contains file controls like O_RDWR
-#include <errno.h>   // Error integer and strerror() function
-#include <termios.h> // Contains POSIX terminal control definitions
-#include <unistd.h>  // write(), read(), close()
-#include <cstdint>
-#include <string>
-#include <iostream>
-#include <future>
-#include <chrono>
-#include <thread>
-
-#include "KinovaMobile/kinova_mobile.hpp"
-
-// Kinova Lib
+// Kinova API Lib
 #include <BaseClientRpc.h>
 #include <BaseCyclicClientRpc.h>
+#include <ActuatorConfigClientRpc.h>
 #include <SessionClientRpc.h>
 #include <InterconnectConfigClientRpc.h>
 #include <SessionManager.h>
@@ -30,277 +21,417 @@
 #include <RouterClient.h>
 #include <TransportClientTcp.h>
 #include <TransportClientUdp.h>
-
-#include <thread>
-#include <iostream>
-#include <chrono>
-#include <mutex>
-#include <queue>
-#include <condition_variable>
+#include "KinovaClient/utilities.h"
+#include "KinovaClient/specifications.hpp"
 
 #include "KinovaClient/utilities.h"
+#include "KinovaClient/specifications.hpp"
+
+#define PORT 10000
 
 namespace k_api = Kinova::Api;
 
-#define PORT 10000
-#define PORT_REAL_TIME 10001
 
-// void example_api_creation(int argc, char **argv)
-// {
-//     auto parsed_args = ParseExampleArguments(argc, argv);
+// Maximum allowed waiting time during actions
+constexpr auto TIMEOUT_PROMISE_DURATION = std::chrono::seconds{20};
 
-//     // -----------------------------------------------------------
-//     // How to create an API with the SessionManager, DeviceConfigClient and BaseClient services
-//     auto error_callback = [](k_api::KError err){ cout << "_________ callback error _________" << err.toString(); };
-//     auto transport = new k_api::TransportClientTcp();
-//     auto router = new k_api::RouterClient(transport, error_callback);
-//     transport->connect(parsed_args.ip_address, PORT);
-
-//     // Set session data connection information
-//     auto create_session_info = k_api::Session::CreateSessionInfo();
-//     create_session_info.set_username(parsed_args.username);
-//     create_session_info.set_password(parsed_args.password);
-//     create_session_info.set_session_inactivity_timeout(60000);   // (milliseconds)
-//     create_session_info.set_connection_inactivity_timeout(2000); // (milliseconds)
-
-//     // Session manager service wrapper
-//     std::cout << "Creating session for communication" << std::endl;
-//     auto session_manager = new k_api::SessionManager(router);
-//     session_manager->CreateSession(create_session_info);
-//     std::cout << "Session created" << std::endl;
-
-//     // Create DeviceConfigClient and BaseClient
-//     auto device_config = new k_api::DeviceConfig::DeviceConfigClient(router);
-//     auto base = new k_api::Base::BaseClient(router);
-
-//     // -----------------------------------------------------------
-//     // Now you're ready to use the API
-//     // ...
-
-//     // -----------------------------------------------------------
-//     // After you're done, here's how to tear down the API
-
-//     // Close API session
-//     session_manager->CloseSession();
-
-//     // Deactivate the router and cleanly disconnect from the transport object
-//     router->SetActivationStatus(false);
-//     transport->disconnect();
-
-//     // Destroy the API
-//     delete base;
-//     delete device_config;
-//     delete session_manager;
-//     delete router;
-//     delete transport;
-// }
-
-// int main(int argc, char **argv)
-// {
-//     // // Specify the port name and baud rate
-//     // std::string portName = "/dev/ttyACM0"; // Example port name
-//     // // std::string portName = "/tmp/ttyV0"; // Example port name
-
-//     // speed_t baudRate = B115200; // Example baud rate
-
-//     // // Create an instance of KinovaMobileSerial
-//     // KinovaMobile::KinovaMobileController serial(portName);
-
-//     // // Perform other operations with the serial port as needed
-
-//     // // serial.ResetOdometry();
-//     // serial.SendRefPose(1, 0, 0);
-
-//     // serial.Move();
-
-//     example_api_creation(argc, argv);
-
-//     // return 0;
-// }
-
-// class GripperCommandExample
-// {
-// public:
-//     GripperCommandExample(const std::string &ip_address, int port, const std::string &username = "admin", const std::string &password = "admin") : m_ip_address(ip_address), m_username(username), m_password(password), m_port(port)
-//     {
-//         m_router = nullptr;
-//         m_transport = nullptr;
-//         m_session_manager = nullptr;
-//         m_device_manager = nullptr;
-//         m_base = nullptr;
-
-//         m_is_init = false;
-//     }
-
-//     ~GripperCommandExample()
-//     {
-//         // Close API session
-//         m_session_manager->CloseSession();
-
-//         // Deactivate the router and cleanly disconnect from the transport object
-//         m_router->SetActivationStatus(false);
-//         m_transport->disconnect();
-
-//         // Destroy the API
-//         delete m_base;
-//         delete m_device_manager;
-//         delete m_session_manager;
-//         delete m_router;
-//         delete m_transport;
-//     }
-
-//     void Init()
-//     {
-//         if (m_is_init)
-//         {
-//             return;
-//         }
-//         m_transport = new k_api::TransportClientTcp();
-//         m_transport->connect(m_ip_address, m_port);
-//         m_router = new k_api::RouterClient(m_transport, [](k_api::KError err)
-//                                            { std::cout << "_________ callback error _________" << err.toString(); });
-
-//         // Set session data connection information
-//         auto createSessionInfo = k_api::Session::CreateSessionInfo();
-//         createSessionInfo.set_username(m_username);
-//         createSessionInfo.set_password(m_password);
-//         createSessionInfo.set_session_inactivity_timeout(60000);   // (milliseconds)
-//         createSessionInfo.set_connection_inactivity_timeout(2000); // (milliseconds)
-
-//         // Session manager service wrapper
-//         m_session_manager = new k_api::SessionManager(m_router);
-//         m_session_manager->CreateSession(createSessionInfo);
-
-//         // Create services
-//         m_device_manager = new k_api::DeviceManager::DeviceManagerClient(m_router);
-//         m_base = new k_api::Base::BaseClient(m_router);
-
-//         m_is_init = true;
-//     }
-
-//     bool Run()
-//     {
-//         if (m_is_init == false)
-//         {
-//             return false;
-//         }
-//         std::cout << "Performing gripper test in position..." << std::endl;
-
-//         k_api::Base::GripperCommand gripper_command;
-
-//         gripper_command.set_mode(k_api::Base::GRIPPER_POSITION);
-
-//         auto finger = gripper_command.mutable_gripper()->add_finger();
-//         finger->set_finger_identifier(1);
-//         for (float position = 0.0; position < 1.0; position += 0.1)
-//         {
-//             std::cout << "Setting position to " << position << std::endl;
-//             finger->set_value(position);
-//             m_base->SendGripperCommand(gripper_command);
-//             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//         }
-
-//         std::cout << "Opening gripper using speed command..." << std::endl;
-//         gripper_command.set_mode(k_api::Base::GRIPPER_SPEED);
-//         finger->set_value(0.1);
-//         m_base->SendGripperCommand(gripper_command);
-//         k_api::Base::Gripper gripper_feedback;
-//         k_api::Base::GripperRequest gripper_request;
-//         bool is_motion_completed = false;
-//         gripper_request.set_mode(k_api::Base::GRIPPER_POSITION);
-//         while (!is_motion_completed)
-//         {
-//             float position = 0.0f;
-//             gripper_feedback = m_base->GetMeasuredGripperMovement(gripper_request);
-
-//             if (gripper_feedback.finger_size())
-//             {
-//                 position = gripper_feedback.finger(0).value();
-//                 cout << "Reported position : " << position << std::endl;
-//             }
-
-//             if (position < 0.01f)
-//             {
-//                 is_motion_completed = true;
-//             }
-//         }
-
-//         std::cout << "Closing gripper using speed command..." << std::endl;
-//         finger->set_value(-0.1);
-//         m_base->SendGripperCommand(gripper_command);
-//         is_motion_completed = false;
-//         gripper_request.set_mode(k_api::Base::GRIPPER_SPEED);
-//         while (!is_motion_completed)
-//         {
-//             float speed = 0.0;
-//             gripper_feedback = m_base->GetMeasuredGripperMovement(gripper_request);
-//             if (gripper_feedback.finger_size())
-//             {
-//                 speed = gripper_feedback.finger(0).value();
-//                 cout << "Reported speed : " << speed << std::endl;
-//             }
-
-//             if (speed == 0.0f)
-//             {
-//                 is_motion_completed = true;
-//             }
-//         }
-//         return true;
-//     }
-
-// private:
-//     k_api::RouterClient *m_router;
-//     k_api::TransportClientTcp *m_transport;
-//     k_api::SessionManager *m_session_manager;
-//     k_api::Base::BaseClient *m_base;
-//     k_api::DeviceManager::DeviceManagerClient *m_device_manager;
-//     bool m_is_init;
-//     std::string m_username;
-//     std::string m_password;
-//     std::string m_ip_address;
-//     int m_port;
-// };
-
-// int main(int argc, char **argv)
-// {
-//     auto parsed_args = ParseExampleArguments(argc, argv);
-
-//     GripperCommandExample *gripper_command_example;
-//     gripper_command_example = new GripperCommandExample(parsed_args.ip_address, PORT, parsed_args.username, parsed_args.password);
-//     gripper_command_example->Init();
-//     gripper_command_example->Run();
-//     delete gripper_command_example;
-
-//     return 0;
-// };
-
-// Struct to hold feedback data
-struct FeedbackData
+// Create an event listener that will set the promise action event to the exit value
+// Will set promise to either END or ABORT
+// Use finish_promise.get_future.get() to wait and get the value
+std::function<void(k_api::Base::ActionNotification)>
+create_event_listener_by_promise(std::promise<k_api::Base::ActionEvent> &finish_promise)
 {
-    std::vector<double> positions;
-    std::vector<double> velocities;
-    std::vector<double> currents;
-};
+    return [&finish_promise](k_api::Base::ActionNotification notification)
+    {
+        const auto action_event = notification.action_event();
+        switch (action_event)
+        {
+        case k_api::Base::ActionEvent::ACTION_END:
+        case k_api::Base::ActionEvent::ACTION_ABORT:
+            finish_promise.set_value(action_event);
+            break;
+        default:
+            break;
+        }
+    };
+}
 
-// Shared queue for feedback data
-std::mutex queueMutex;
-std::queue<FeedbackData> feedbackQueue;
-std::condition_variable queueCondition;
 
-// Function to receive Kinova feedback data
-void receiveFeedbackData(ExampleArgs parsed_args)
+void printException(k_api::KDetailedException &ex)
 {
+    // You can print the error informations and error codes
+    auto error_info = ex.getErrorInfo().getError();
+    std::cout << "KDetailedoption detected what:  " << ex.what() << std::endl;
+
+    std::cout << "KError error_code: " << error_info.error_code() << std::endl;
+    std::cout << "KError sub_code: " << error_info.error_sub_code() << std::endl;
+    std::cout << "KError sub_string: " << error_info.error_sub_string() << std::endl;
+
+    // Error codes by themselves are not very verbose if you don't see their corresponding enum value
+    // You can use google::protobuf helpers to get the string enum element for every error code and sub-code
+    std::cout << "Error code string equivalent: " << k_api::ErrorCodes_Name(k_api::ErrorCodes(error_info.error_code())) << std::endl;
+    std::cout << "Error sub-code string equivalent: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes(error_info.error_sub_code())) << std::endl;
+}
+
+bool move_to_home_position(k_api::Base::BaseClient *base)
+{
+
+    // Clearing faults
+    try
+    {
+        base->ClearFaults();
+    }
+    catch (...)
+    {
+        std::cout << "Unable to clear robot faults" << std::endl;
+        return false;
+    }
+
+    // Make sure the arm is in Single Level Servoing before executing an Action
+    auto servoing_mode = k_api::Base::ServoingModeInformation();
+    servoing_mode.set_servoing_mode(k_api::Base::ServoingMode::SINGLE_LEVEL_SERVOING);
+    base->SetServoingMode(servoing_mode);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // Move arm to ready position
+    std::cout << "Moving the arm to a safe position" << std::endl;
+    auto action_type = k_api::Base::RequestedActionType();
+    action_type.set_action_type(k_api::Base::REACH_JOINT_ANGLES);
+    auto action_list = base->ReadAllActions(action_type);
+    auto action_handle = k_api::Base::ActionHandle();
+    action_handle.set_identifier(0);
+    for (auto action : action_list.action_list())
+    {
+        if (action.name() == "Home")
+        {
+            action_handle = action.handle();
+        }
+    }
+
+    if (action_handle.identifier() == 0)
+    {
+        std::cout << "Can't reach safe position, exiting" << std::endl;
+        return false;
+    }
+    else
+    {
+        // Connect to notification action topic
+        std::promise<k_api::Base::ActionEvent> finish_promise;
+        auto finish_future = finish_promise.get_future();
+        auto promise_notification_handle = base->OnNotificationActionTopic(
+            create_event_listener_by_promise(finish_promise),
+            k_api::Common::NotificationOptions());
+
+        // Execute action
+        base->ExecuteActionFromReference(action_handle);
+
+        // Wait for future value from promise
+        const auto status = finish_future.wait_for(TIMEOUT_PROMISE_DURATION);
+        base->Unsubscribe(promise_notification_handle);
+
+        if (status != std::future_status::ready)
+        {
+            std::cout << "Timeout on action notification wait" << std::endl;
+            return false;
+        }
+        const auto promise_event = finish_future.get();
+
+        std::cout << "Move to Home completed" << std::endl;
+        std::cout << "Promise value : " << k_api::Base::ActionEvent_Name(promise_event) << std::endl;
+
+        return true;
+    }
+}
+
+bool move_to_pref_position(k_api::Base::BaseClient *base)
+{
+    bool success = false;
+
+    auto product = base->GetProductConfiguration();
+    bool gen3LiteModelCompatible = false;
+    if (product.model() == k_api::ProductConfiguration::MODEL_ID_L53 || product.model() == k_api::ProductConfiguration::MODEL_ID_L31)
+    {
+        if (product.model() == k_api::ProductConfiguration::MODEL_ID_L31)
+        {
+            gen3LiteModelCompatible = true; // Detected a Gen3 Lite
+        }
+    }
+    else
+    {
+        std::cout << "Product is not compatible to run this example please contact support with KIN number bellow" << std::endl;
+        std::cout << "Product KIN is : " << product.kin() << std::endl;
+        return success;
+    }
+
+    // Make sure the arm is in Single Level Servoing before executing an Action
+    auto servoingMode = k_api::Base::ServoingModeInformation();
+    servoingMode.set_servoing_mode(k_api::Base::ServoingMode::SINGLE_LEVEL_SERVOING);
+    base->SetServoingMode(servoingMode);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // Create the trajectory
+    k_api::Base::WaypointList wpts = k_api::Base::WaypointList();
+
+    // Binded to degrees of movement and each degrees correspond to one degree of liberty
+    auto actuators = base->GetActuatorCount();
+    uint32_t degreesOfFreedom = actuators.count();
+
+    // Move arm with waypoints list
+    const int kmaxDegreesOfFreedom = 7;
+    auto jointPoses = std::vector<std::array<float, kmaxDegreesOfFreedom>>();
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Note : To customize this example for your needs an array of array is used containing the information needed :
+    // all  values correspond to a joint/motor
+    // If you have 6DoF the array will contain 6 positions expressed in degrees in float format.
+    // If you have 7DoF the array will contain 7 positions expressed in degrees in float format.
+    // You may overwrite the jointPose array for the proper arm
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if (gen3LiteModelCompatible == true) // Gen3 Lite
+    {
+        // jointPoses.push_back({ 0.0f,  344.0f, 75.0f,  360.0f, 300.0f, 0.0f  });  // Home
+        // jointPoses.push_back({ 0.0f,  21.0f,  145.0f, 272.0f, 32.0f,  273.0f}); // Retract
+        // jointPoses.push_back({ 42.0f, 334.0f, 79.0f,  241.0f, 305.0f, 56.0f });// Angular pick down
+        jointPoses.push_back({0.0f, 20.0f, 90.0f, 0.0f, 0.0f, 0.0f}); // Pref
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    const float firstTime = 5.0f;
+
+    for (auto index = 0; index < jointPoses.size(); ++index)
+    {
+        k_api::Base::Waypoint *wpt = wpts.add_waypoints();
+        if (wpt != nullptr)
+        {
+            wpt->set_name(std::string("waypoint_") + std::to_string(index));
+            k_api::Base::AngularWaypoint *ang = wpt->mutable_angular_waypoint();
+            if (ang != nullptr)
+            {
+                for (auto angleIndex = 0; angleIndex < degreesOfFreedom; ++angleIndex)
+                {
+                    ang->add_angles(jointPoses.at(index).at(angleIndex));
+                }
+
+                // Joints/motors 5 and 7 are slower and need more time
+                if (index == 4 || index == 6)
+                {
+                    ang->set_duration(firstTime * 6); // min 30 seconds
+                }
+                else
+                {
+                    ang->set_duration(firstTime);
+                }
+            }
+        }
+    }
+
+    // Connect to notification action topic
+    std::promise<k_api::Base::ActionEvent> finish_promise_cart;
+    auto finish_future_cart = finish_promise_cart.get_future();
+    auto promise_notification_handle_cart = base->OnNotificationActionTopic(create_event_listener_by_promise(finish_promise_cart),
+                                                                            k_api::Common::NotificationOptions());
+
+    k_api::Base::WaypointValidationReport result;
+    try
+    {
+        // Verify validity of waypoints
+        auto validationResult = base->ValidateWaypointList(wpts);
+        result = validationResult;
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Try catch error on waypoint list" << std::endl;
+        // You can print the error informations and error codes
+        auto error_info = ex.getErrorInfo().getError();
+        std::cout << "KDetailedoption detected what:  " << ex.what() << std::endl;
+
+        std::cout << "KError error_code: " << error_info.error_code() << std::endl;
+        std::cout << "KError sub_code: " << error_info.error_sub_code() << std::endl;
+        std::cout << "KError sub_string: " << error_info.error_sub_string() << std::endl;
+
+        // Error codes by themselves are not very verbose if you don't see their corresponding enum value
+        // You can use google::protobuf helpers to get the string enum element for every error code and sub-code
+        std::cout << "Error code string equivalent: " << k_api::ErrorCodes_Name(k_api::ErrorCodes(error_info.error_code())) << std::endl;
+        std::cout << "Error sub-code string equivalent: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes(error_info.error_sub_code())) << std::endl;
+        return false;
+    }
+
+    // Trajectory error report always exists and we need to make sure no elements are found in order to validate the trajectory
+    if (result.trajectory_error_report().trajectory_error_elements_size() == 0)
+    {
+        // Execute action
+        try
+        {
+            // Move arm with waypoints list
+            std::cout << "Moving the arm creating a trajectory of " << jointPoses.size() << " angular waypoints" << std::endl;
+            base->ExecuteWaypointTrajectory(wpts);
+        }
+        catch (k_api::KDetailedException &ex)
+        {
+            std::cout << "Try catch error executing normal trajectory" << std::endl;
+            // You can print the error informations and error codes
+            auto error_info = ex.getErrorInfo().getError();
+            std::cout << "KDetailedoption detected what:  " << ex.what() << std::endl;
+
+            std::cout << "KError error_code: " << error_info.error_code() << std::endl;
+            std::cout << "KError sub_code: " << error_info.error_sub_code() << std::endl;
+            std::cout << "KError sub_string: " << error_info.error_sub_string() << std::endl;
+
+            // Error codes by themselves are not very verbose if you don't see their corresponding enum value
+            // You can use google::protobuf helpers to get the string enum element for every error code and sub-code
+            std::cout << "Error code string equivalent: " << k_api::ErrorCodes_Name(k_api::ErrorCodes(error_info.error_code())) << std::endl;
+            std::cout << "Error sub-code string equivalent: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes(error_info.error_sub_code())) << std::endl;
+            return false;
+        }
+        // Wait for future value from promise
+        const auto ang_status = finish_future_cart.wait_for(std::chrono::seconds{100});
+
+        base->Unsubscribe(promise_notification_handle_cart);
+
+        if (ang_status != std::future_status::ready)
+        {
+            std::cout << "Timeout on action notification wait for angular waypoint trajectory" << std::endl;
+        }
+        else
+        {
+            const auto ang_promise_event = finish_future_cart.get();
+            std::cout << "Angular waypoint trajectory completed" << std::endl;
+            std::cout << "Promise value : " << k_api::Base::ActionEvent_Name(ang_promise_event) << std::endl;
+
+            success = true;
+
+            // We are now ready to reuse the validation output to test default trajectory generated...
+            // Here we need to understand that trajectory using angular waypoint is never optimized.
+            // In other words the waypoint list is the same and this is a limitation of Kortex API for now
+        }
+    }
+    else
+    {
+        std::cout << "Error found in trajectory" << std::endl;
+        result.trajectory_error_report().PrintDebugString();
+    }
+
+    return success;
+}
+
+bool example_forward_kinematics(k_api::Base::BaseClient *base)
+{
+    // Current arm's joint angles
+    k_api::Base::JointAngles input_joint_angles;
+    try
+    {
+        std::cout << "Getting Angles for every joint..." << std::endl;
+        input_joint_angles = base->GetMeasuredJointAngles();
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Unable to get joint angles" << std::endl;
+        printException(ex);
+        return false;
+    }
+
+    std::cout << "Joint ID : Joint Angle" << std::endl;
+    for (auto joint_angle : input_joint_angles.joint_angles())
+    {
+        std::cout << joint_angle.joint_identifier() << " : " << joint_angle.value() << std::endl;
+    }
+    std::cout << std::endl;
+
+    // Computing Foward Kinematics (Angle -> cartesian convert) from arm's current joint angles
+    k_api::Base::Pose pose;
+    try
+    {
+        std::cout << "Computing Foward Kinematics using joint angles..." << std::endl;
+        pose = base->ComputeForwardKinematics(input_joint_angles);
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Unable to compute forward kinematics" << std::endl;
+        printException(ex);
+        return false;
+    }
+
+    std::cout << "Pose calculated : " << std::endl;
+    std::cout << "Coordinate (x, y, z)  : (" << pose.x() << ", " << pose.y() << ", " << pose.z() << ")" << std::endl;
+    std::cout << "Theta (theta_x, theta_y, theta_z)  : (" << pose.theta_x() << ", " << pose.theta_y() << ", " << pose.theta_z() << ")" << std::endl
+              << std::endl;
+
+    return true;
+}
+
+bool example_inverse_kinematics(k_api::Base::BaseClient *base)
+{
+    // get robot's pose (by using forward kinematics)
+    k_api::Base::JointAngles input_joint_angles;
+    k_api::Base::Pose pose;
+    try
+    {
+        input_joint_angles = base->GetMeasuredJointAngles();
+        pose = base->ComputeForwardKinematics(input_joint_angles);
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Unable to get current robot pose" << std::endl;
+        printException(ex);
+        return false;
+    }
+
+    // Object containing cartesian coordinates and Angle Guess
+    k_api::Base::IKData input_IkData;
+
+    // Fill the IKData Object with the cartesian coordinates that need to be converted
+    input_IkData.mutable_cartesian_pose()->set_x(pose.x());
+    input_IkData.mutable_cartesian_pose()->set_y(pose.y());
+    input_IkData.mutable_cartesian_pose()->set_z(pose.z());
+    input_IkData.mutable_cartesian_pose()->set_theta_x(pose.theta_x());
+    input_IkData.mutable_cartesian_pose()->set_theta_y(pose.theta_y());
+    input_IkData.mutable_cartesian_pose()->set_theta_z(pose.theta_z());
+
+    // Fill the IKData Object with the guessed joint angles
+    Kinova::Api::Base::JointAngle *jAngle;
+    for (auto joint_angle : input_joint_angles.joint_angles())
+    {
+        jAngle = input_IkData.mutable_guess()->add_joint_angles();
+        // '- 1' to generate an actual "guess" for current joint angles
+        jAngle->set_value(joint_angle.value() - 1);
+    }
+
+    // Computing Inverse Kinematics (cartesian -> Angle convert) from arm's current pose and joint angles guess
+    k_api::Base::JointAngles computed_joint_angles;
+    try
+    {
+        std::cout << "Computing Inverse Kinematics using joint angles and pose..." << std::endl;
+        computed_joint_angles = base->ComputeInverseKinematics(input_IkData);
+    }
+    catch (k_api::KDetailedException &ex)
+    {
+        std::cout << "Unable to compute inverse kinematics" << std::endl;
+        printException(ex);
+        return false;
+    }
+
+    std::cout << "Joint ID : Joint Angle" << std::endl;
+    int joint_identifier = 0;
+    for (auto joint_angle : computed_joint_angles.joint_angles())
+    {
+        std::cout << joint_identifier << " : " << joint_angle.value() << std::endl;
+        joint_identifier++;
+    }
+
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    auto parsed_args = ParseExampleArguments(argc, argv);
+
     // Create API objects
     auto error_callback = [](k_api::KError err)
     { cout << "_________ callback error _________" << err.toString(); };
-
     auto transport = new k_api::TransportClientTcp();
     auto router = new k_api::RouterClient(transport, error_callback);
     transport->connect(parsed_args.ip_address, PORT);
-
-    auto transport_real_time = new k_api::TransportClientUdp();
-    auto router_real_time = new k_api::RouterClient(transport_real_time, error_callback);
-    transport_real_time->connect(parsed_args.ip_address, PORT_REAL_TIME);
 
     // Set session data connection information
     auto create_session_info = k_api::Session::CreateSessionInfo();
@@ -310,160 +441,33 @@ void receiveFeedbackData(ExampleArgs parsed_args)
     create_session_info.set_connection_inactivity_timeout(2000); // (milliseconds)
 
     // Session manager service wrapper
-    std::cout << "Creating sessions for communication" << std::endl;
+    std::cout << "Creating session for communication" << std::endl;
     auto session_manager = new k_api::SessionManager(router);
     session_manager->CreateSession(create_session_info);
-    auto session_manager_real_time = new k_api::SessionManager(router_real_time);
-    session_manager_real_time->CreateSession(create_session_info);
-    std::cout << "Sessions created" << std::endl;
+    std::cout << "Session created" << std::endl;
 
-    // Create services
+    // Create BaseClient
     auto base = new k_api::Base::BaseClient(router);
-    auto base_cyclic = new k_api::BaseCyclic::BaseCyclicClient(router_real_time);
 
-    k_api::BaseCyclic::Feedback base_feedback;
-    k_api::BaseCyclic::Command base_command;
-
-    bool return_status = true;
-
-    while (return_status)
-    {
-        try
-        {
-            base_feedback = base_cyclic->RefreshFeedback();
-
-            int actuator_count = base->GetActuatorCount().count();
-
-            // Initialize each actuator to its current position
-            FeedbackData data;
-            for (int i = 0; i < actuator_count; i++)
-            {
-                data.positions.push_back(base_feedback.actuators(i).position());
-                data.velocities.push_back(base_feedback.actuators(i).velocity());
-                data.currents.push_back(base_feedback.actuators(i).current_motor());
-            }
-
-            // Lock the queue and push the feedback data
-            {
-                std::lock_guard<std::mutex> lock(queueMutex);
-                feedbackQueue.push(data);
-            }
-            // Notify the condition variable to wake up the other thread
-            queueCondition.notify_one();
-
-            // Sleep for a short duration (simulate Kinova feedback rate)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        catch (k_api::KDetailedException &ex)
-        {
-            std::cout << "Kortex error: " << ex.what() << std::endl;
-            return_status = false;
-        }
-        catch (std::runtime_error &ex2)
-        {
-            std::cout << "Runtime error: " << ex2.what() << std::endl;
-            return_status = false;
-        }
-    }
+    // example core
+    bool success = true;
+    success &= move_to_home_position(base);
+    success &= move_to_pref_position(base);
+    success &= example_forward_kinematics(base);
+    success &= example_inverse_kinematics(base);
 
     // Close API session
     session_manager->CloseSession();
-    session_manager_real_time->CloseSession();
 
     // Deactivate the router and cleanly disconnect from the transport object
     router->SetActivationStatus(false);
     transport->disconnect();
-    router_real_time->SetActivationStatus(false);
-    transport_real_time->disconnect();
 
     // Destroy the API
     delete base;
-    delete base_cyclic;
     delete session_manager;
-    delete session_manager_real_time;
     delete router;
-    delete router_real_time;
     delete transport;
-    delete transport_real_time;
 
-    // while (true)
-    // {
-    //     // Simulate receiving position, velocity, and current feedback data from Kinova API
-    //     // Here, we'll just increment values for demonstration
-    //     FeedbackData data;
-    //     data.position += 0.1;
-    //     data.velocity += 0.2;
-    //     data.current += 0.5;
-
-    //     // Lock the queue and push the feedback data
-    //     {
-    //         std::lock_guard<std::mutex> lock(queueMutex);
-    //         feedbackQueue.push(data);
-    //     }
-
-    //     // Notify the condition variable to wake up the other thread
-    //     queueCondition.notify_one();
-
-    //     // Sleep for a short duration (simulate Kinova feedback rate)
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    // }
-}
-
-// Function for dynamic calculations
-void performDynamicCalculations()
-{
-    while (true)
-    {
-        // Retrieve feedback data from the queue
-        FeedbackData data;
-        {
-            std::unique_lock<std::mutex> lock(queueMutex);
-            // Wait until the queue is not empty
-            queueCondition.wait(lock, []
-                                { return !feedbackQueue.empty(); });
-            data = feedbackQueue.front();
-            feedbackQueue.pop();
-        }
-
-        // Perform dynamic calculations using the received feedback data
-        // Print each element of the vectors
-        std::cout << "Dynamic Calculations:" << std::endl;
-        std::cout << "Received Position:" << std::endl;
-        for (const auto &pos : data.positions)
-        {
-            std::cout << pos << std::endl;
-        }
-
-        std::cout << "Received Velocity:" << std::endl;
-        for (const auto &vel : data.velocities)
-        {
-            std::cout << vel << std::endl;
-        }
-
-        std::cout << "Received Current:" << std::endl;
-        for (const auto &curr : data.currents)
-        {
-            std::cout << curr << std::endl;
-        }
-        // Sleep for a short duration (simulate dynamic calculation rate)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-}
-
-int main(int argc, char **argv)
-{
-    // auto parsed_args = ParseExampleArguments(argc, argv);
-
-    // Parse command line arguments
-    ExampleArgs parsed_args = ParseExampleArguments(argc, argv);
-
-    // Create two exclusive threads: one for receiving feedback data and another for dynamic calculations
-    std::thread feedbackThread(receiveFeedbackData, parsed_args);
-    std::thread calculationsThread(performDynamicCalculations);
-
-    // Join the threads to wait for them to finish (though they won't, as they are infinite loops)
-    feedbackThread.join();
-    calculationsThread.join();
-
-    return 0;
+    return success ? 0 : 1;
 }

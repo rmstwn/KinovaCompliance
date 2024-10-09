@@ -72,7 +72,8 @@ namespace casadi_kin_dyn
     void set_tau(const std::vector<double> &joint_torques);
     void set_current(const std::vector<double> &joint_currents);
 
-    void set_targetx();
+    void set_prefTargetx();
+    void set_targetPos(const std::vector<double> &target_pos);
 
     ~CasadiKinDyn();
 

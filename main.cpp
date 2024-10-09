@@ -541,6 +541,9 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     std::vector<double> errorPos(3, 0.0);
     std::vector<double> force(3, 0.0);
 
+    std::vector<double> PrefPosition(3, 0.0);
+    std::vector<double> TargetPosition(3, 0.0);
+
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
 
     // IK
@@ -664,7 +667,10 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // return true;
 
         kin_dyn.set_q(jntPositions); // Set the joint positions
-        kin_dyn.set_targetx();
+        kin_dyn.set_prefTargetx();
+
+        PrefPosition = kin_dyn.get_pos();
+        TargetPosition = PrefPosition;
 
         // Set last actuator in torque mode now that the command is equal to measure
         auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
@@ -812,14 +818,29 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // kin_dyn.set_q(jntPositions);
             currentPos = kin_dyn.get_pos();
 
+            if (totalElapsedTime <= TASK_TIME_LIMIT_MICRO / 2)
+            {
+                TargetPosition[0] = TargetPosition[0];
+                TargetPosition[1] = TargetPosition[1];
+                TargetPosition[2] = TargetPosition[2] - 0.0001;
+            }
+            else
+            {
+                TargetPosition[0] = TargetPosition[0];
+                TargetPosition[1] = TargetPosition[1];
+                TargetPosition[2] = TargetPosition[2] + 0.0001;
+            }
+
+            kin_dyn.set_targetPos({TargetPosition[0], TargetPosition[1], TargetPosition[2]});
+
             // Compute Total Current
             for (int i = 0; i < actuator_count; i++)
             {
                 // currentCommand[i] = currentGravityCommand[i];
                 // currentCommand[i] = currentGravityCommand[i] + ComFrictionVelDir[i];
                 // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i];
-                // currentCommand[i] = currentGravityCommand[i] + ComTotalFrictionDir[i] + currentImpCommand[i];
-                currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
+                currentCommand[i] = currentGravityCommand[i] + ComTotalFrictionDir[i] + currentImpCommand[i];
+                // currentCommand[i] = currentImpCommand[i] + currentGravityCommand[i] + ComTotalFrictionDir[i] + ComNullSpace[i];
                 // currentCommand[i] = currentCommand[i] + ComNullSpace[i];
                 // currentCommand[i] = ((currentImpCommand[i] + currentGravityCommand[i]) + ComTotalFrictionDir[i]) + ComNullSpace[i];
             }

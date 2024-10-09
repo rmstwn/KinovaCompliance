@@ -91,7 +91,8 @@ namespace casadi_kin_dyn
         void set_tau(const std::vector<double> &joint_torques);
         void set_current(const std::vector<double> &joint_currrents);
 
-        void set_targetx();
+        void set_prefTargetx();
+        void set_targetPos(const std::vector<double> &target_pos);
 
         std::vector<double> get_pos();
 
@@ -326,7 +327,7 @@ namespace casadi_kin_dyn
         _current = casadi::SX::vertcat(current_values); // Convert to casadi::SX
     }
 
-    void CasadiKinDyn::Impl::set_targetx()
+    void CasadiKinDyn::Impl::set_prefTargetx()
     {
         // auto model = _model_dbl.cast<Scalar>();
         // pinocchio::DataTpl<Scalar> data(model);
@@ -348,6 +349,13 @@ namespace casadi_kin_dyn
         target_x = static_cast<std::vector<double>>(res.at(0));
 
         cout << "target_x" << target_x << endl;
+    }
+
+    void CasadiKinDyn::Impl::set_targetPos(const std::vector<double> &target_pos)
+    {
+
+        target_x = target_pos;
+        cout << "target_x" << target_pos << endl;
     }
 
     std::vector<double> CasadiKinDyn::Impl::q_min() const
@@ -2250,9 +2258,14 @@ namespace casadi_kin_dyn
     // {
     //     _impl->set_targetx(input_target_x);
     // }
-    void CasadiKinDyn::set_targetx()
+    void CasadiKinDyn::set_prefTargetx()
     {
-        _impl->set_targetx();
+        _impl->set_prefTargetx();
+    }
+
+    void CasadiKinDyn::set_targetPos(const std::vector<double> &target_pos)
+    {
+        _impl->set_targetPos(target_pos);
     }
 
 }
