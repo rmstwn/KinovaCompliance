@@ -687,7 +687,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 20;
+        const int TASK_TIME_LIMIT_SEC = 120;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -701,10 +701,16 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         sc::duration<double, milli> BaseCommandTimeDelay = loopStartTime - UpdateBaseCommandTime;
         const sc::milliseconds COMMAND_BASE_TIME(5);
 
-        // PID
-        auto prev_time = std::chrono::high_resolution_clock::now();
-
         // std::thread baseCommadThread(sendMobileCommands);
+
+        ///////////////////////////////////////////////////////////////////////////////
+
+        // Motion parameters
+        double amplitude = 0.5;  // Maximum distance of 1 meter
+        double period = 10.0;    // Move 1 meter left in 2 seconds, then 1 meter right in the next 2 seconds
+        double frequency = 0.5 / period;
+
+        ///////////////////////////////////////////////////////////////////////////////
 
         while (totalElapsedTime < TASK_TIME_LIMIT_MICRO)
         {
@@ -712,12 +718,6 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             loopStartTime = sc::steady_clock::now();
             totalElapsedTime = loopStartTime - controlStartTime;
             BaseCommandTimeDelay = loopStartTime - UpdateBaseCommandTime;
-
-            // // PID dt
-            // auto current_time = std::chrono::high_resolution_clock::now();
-            // std::chrono::duration<double> elapsed = current_time - prev_time;
-            // double dt = elapsed.count();
-            // prev_time = current_time;
 
             base_feedback = base_cyclic->RefreshFeedback();
 
@@ -818,18 +818,16 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // kin_dyn.set_q(jntPositions);
             currentPos = kin_dyn.get_pos();
 
-            if (totalElapsedTime <= TASK_TIME_LIMIT_MICRO / 2)
-            {
-                TargetPosition[0] = TargetPosition[0];
-                TargetPosition[1] = TargetPosition[1];
-                TargetPosition[2] = TargetPosition[2] - 0.0001;
-            }
-            else
-            {
-                TargetPosition[0] = TargetPosition[0];
-                TargetPosition[1] = TargetPosition[1];
-                TargetPosition[2] = TargetPosition[2] + 0.0001;
-            }
+            ////////////////////////////////////////////////////////////////////////////////////
+
+            double elapsed_seconds = sc::duration<double>(totalElapsedTime).count();
+
+            // Generate smooth setpoint using sine wave for Y-axis motion
+            TargetPosition[1] = amplitude * std::sin(2 * M_PI * frequency * elapsed_seconds);
+            TargetPosition[0] = PrefPosition[0]; // Keep X constant
+            TargetPosition[2] = PrefPosition[2]; // Keep Z constant
+
+            ////////////////////////////////////////////////////////////////////////////////////
 
             kin_dyn.set_targetPos({TargetPosition[0], TargetPosition[1], TargetPosition[2]});
 
