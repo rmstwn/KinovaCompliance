@@ -687,7 +687,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         // Real-time loop
         const int SECOND_IN_MICROSECONDS = 1000000;
         const int RATE_HZ = 600; // Hz
-        const int TASK_TIME_LIMIT_SEC = 120;
+        const int TASK_TIME_LIMIT_SEC = 60;
         const sc::microseconds TASK_TIME_LIMIT_MICRO(TASK_TIME_LIMIT_SEC * SECOND_IN_MICROSECONDS);
         const sc::microseconds LOOP_DURATION(SECOND_IN_MICROSECONDS / RATE_HZ);
 
@@ -706,8 +706,8 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
         ///////////////////////////////////////////////////////////////////////////////
 
         // Motion parameters
-        double amplitude = 0.5;  // Maximum distance of 1 meter
-        double period = 10.0;    // Move 1 meter left in 2 seconds, then 1 meter right in the next 2 seconds
+        double amplitude = 0.4; // Maximum distance of 1 meter
+        double period = 8.0;   // Move 1 meter left in 2 seconds, then 1 meter right in the next 2 seconds
         double frequency = 0.5 / period;
 
         ///////////////////////////////////////////////////////////////////////////////
@@ -825,7 +825,7 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
             // Generate smooth setpoint using sine wave for Y-axis motion
             TargetPosition[1] = amplitude * std::sin(2 * M_PI * frequency * elapsed_seconds);
             TargetPosition[0] = PrefPosition[0]; // Keep X constant
-            TargetPosition[2] = PrefPosition[2]; // Keep Z constant
+            TargetPosition[2] = PrefPosition[2] - 0.2; // Keep Z constant
 
             ////////////////////////////////////////////////////////////////////////////////////
 
@@ -1017,8 +1017,108 @@ bool actuator_low_level_current_control(k_api::Base::BaseClient *base, k_api::Ba
     return return_status;
 }
 
-// using namespace casadi;
-// using namespace std::chrono;
+///////////////////////////////////////////////////////////////////////
+// class GripperCommandExample
+//
+// Implements a sample Gripper command application.
+///////////////////////////////////////////////////////////////////////
+class GripperCommandExample
+{
+public:
+    GripperCommandExample(const std::string &ip_address, int port, const std::string &username = "admin", const std::string &password = "admin") : m_ip_address(ip_address), m_username(username), m_password(password), m_port(port)
+    {
+        m_router = nullptr;
+        m_transport = nullptr;
+        m_session_manager = nullptr;
+        m_device_manager = nullptr;
+        m_base = nullptr;
+
+        m_is_init = false;
+    }
+
+    ~GripperCommandExample()
+    {
+        // Close API session
+        m_session_manager->CloseSession();
+
+        // Deactivate the router and cleanly disconnect from the transport object
+        m_router->SetActivationStatus(false);
+        m_transport->disconnect();
+
+        // Destroy the API
+        delete m_base;
+        delete m_device_manager;
+        delete m_session_manager;
+        delete m_router;
+        delete m_transport;
+    }
+
+    void Init()
+    {
+        if (m_is_init)
+        {
+            return;
+        }
+        m_transport = new k_api::TransportClientTcp();
+        m_transport->connect(m_ip_address, m_port);
+        m_router = new k_api::RouterClient(m_transport, [](k_api::KError err)
+                                           { std::cout << "_________ callback error _________" << err.toString(); });
+
+        // Set session data connection information
+        auto createSessionInfo = k_api::Session::CreateSessionInfo();
+        createSessionInfo.set_username(m_username);
+        createSessionInfo.set_password(m_password);
+        createSessionInfo.set_session_inactivity_timeout(60000);   // (milliseconds)
+        createSessionInfo.set_connection_inactivity_timeout(2000); // (milliseconds)
+
+        // Session manager service wrapper
+        m_session_manager = new k_api::SessionManager(m_router);
+        m_session_manager->CreateSession(createSessionInfo);
+
+        // Create services
+        m_device_manager = new k_api::DeviceManager::DeviceManagerClient(m_router);
+        m_base = new k_api::Base::BaseClient(m_router);
+
+        m_is_init = true;
+    }
+
+    bool Run()
+    {
+        if (m_is_init == false)
+        {
+            return false;
+        }
+        std::cout << "Performing gripper test in position..." << std::endl;
+
+        k_api::Base::GripperCommand gripper_command;
+
+        gripper_command.set_mode(k_api::Base::GRIPPER_POSITION);
+
+        auto finger = gripper_command.mutable_gripper()->add_finger();
+        finger->set_finger_identifier(1);
+        for (float position = 0.0; position < 1.0; position += 0.1)
+        {
+            std::cout << "Setting position to " << position << std::endl;
+            finger->set_value(position);
+            m_base->SendGripperCommand(gripper_command);
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+
+        return true;
+    }
+
+private:
+    k_api::RouterClient *m_router;
+    k_api::TransportClientTcp *m_transport;
+    k_api::SessionManager *m_session_manager;
+    k_api::Base::BaseClient *m_base;
+    k_api::DeviceManager::DeviceManagerClient *m_device_manager;
+    bool m_is_init;
+    std::string m_username;
+    std::string m_password;
+    std::string m_ip_address;
+    int m_port;
+};
 
 int main(int argc, char **argv)
 {
@@ -1056,6 +1156,14 @@ int main(int argc, char **argv)
     auto base = new k_api::Base::BaseClient(router);
     auto base_cyclic = new k_api::BaseCyclic::BaseCyclicClient(router_real_time);
     auto actuator_config = new k_api::ActuatorConfig::ActuatorConfigClient(router);
+
+    // gripper
+    GripperCommandExample *gripper_command_example;
+    gripper_command_example = new GripperCommandExample(parsed_args.ip_address, PORT, parsed_args.username, parsed_args.password);
+    gripper_command_example->Init();
+    gripper_command_example->Run();
+
+    delete gripper_command_example;
 
     // Example core
     bool success = true;
